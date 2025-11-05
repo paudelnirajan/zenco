@@ -45,15 +45,16 @@ class LLMGenerator(IDocStringGenerator):
     """
     A generator that uses an LLM service (via ILLMService adapter) to create and evaluate docstrings.
     """
-    def __init__(self, llm_service: ILLMService):
+    def __init__(self, llm_service: ILLMService, style: str = "google"):
         self.llm_service = llm_service
+        self.style = style
 
     def generate(self, node: ast.AST) -> str:
         code_snippet = ast.unparse(node)
         prompt = f"""
-        Generate a professional, Google-style docstring for the following Python code.
-        Only return the docstring itself, without any introductory text line like "Here is the docstring:".
-        The docstring should be enclosed in triple qoutes.
+        Generate a professional, **{self.style}-style docstring** for the following Python code.
+        Only return the docstring itself, without any introductory text like "Here is the docstring:".
+        The docstring should be enclosed in triple quotes.
         ```python
         {code_snippet}
         ```
@@ -81,7 +82,7 @@ class GeneratorFactory:
     A factory to create the appropriate docstring generator based on a strategy name.
     """
     @staticmethod
-    def create_generator(strategy: str) -> IDocStringGenerator:
+    def create_generator(strategy: str, style: str = "google") -> IDocStringGenerator:
         if strategy == "mock":
             return MockGenerator()
         
@@ -94,5 +95,5 @@ class GeneratorFactory:
             model_name = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
             
             groq_adapter = GroqAdapter(api_key=api_key, model=model_name)
-            return LLMGenerator(llm_service=groq_adapter)
+            return LLMGenerator(llm_service=groq_adapter, style=style)
         raise ValueError(f"Unknown generator strategy: {strategy}")
