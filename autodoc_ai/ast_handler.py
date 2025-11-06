@@ -1,6 +1,6 @@
 import ast
-from src.generators import IDocstringGenerator
-from src.transformers import VariableRenamer
+from .generators import IDocstringGenerator
+from .transformers import VariableRenamer
 
 class CodeQualityVisitor(ast.NodeVisitor):
     """

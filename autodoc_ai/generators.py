@@ -2,7 +2,7 @@ import abc
 import ast
 import os
 from dotenv import load_dotenv
-from src.llm_services import ILLMService, GroqAdapter
+from .llm_services import ILLMService, GroqAdapter
 
 class IDocstringGenerator(abc.ABC):
     """
