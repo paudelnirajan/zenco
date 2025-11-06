@@ -6,7 +6,7 @@ from src.generators import GeneratorFactory, IDocStringGenerator
 from src.utils import get_python_files, get_get_changed_files
 from src.config import load_config
 
-def process_file(filepath: str, in_place: bool, strategy: str, overwrite_existing: bool, style: str):
+def process_file(filepath: str, in_place: bool, strategy: str, overwrite_existing: bool, style: str, refactor: bool):
     """
     Process a single Python file for documentation
     """
@@ -30,7 +30,8 @@ def process_file(filepath: str, in_place: bool, strategy: str, overwrite_existin
     
     visitor = CodeQualityVisitor(
         generator=generator, 
-        overwrite_existing=overwrite_existing
+        overwrite_existing=overwrite_existing,
+        refactor=refactor,
     )
     visitor.visit(tree)
 
@@ -67,9 +68,11 @@ def main():
     parser.add_argument("--strategy", choices=["mock", "groq"], default=config['strategy'], help="Docstring generation strategy.")
     parser.add_argument("--style", choices=["google", "numpy", "rst"], default=config['style'], help="Docstring style to enforce.")
     parser.add_argument("--in-place", action="store_true", help="Modify files in place.")
-    # For boolean flags, we check if the key is in config
+
     overwrite_default = config.get('overwrite_existing', False)
+    refactor_default = config.get('refactor', False)
     parser.add_argument("--overwrite-existing", action="store_true", default=overwrite_default, help="Regenerate poor-quality docstrings.")
+    parser.add_argument("--refactor", action="store_true", default=refactor_default, help="Enable AI-powered refactoring (e.g., variable renaming).")
     
     args = parser.parse_args()
 
@@ -93,7 +96,8 @@ def main():
             in_place=args.in_place,
             strategy=args.strategy,
             overwrite_existing=args.overwrite_existing,
-            style=args.style
+            style=args.style,
+            refactor=args.refactor
         )
         print("-" * 50)
 
