@@ -1,4 +1,5 @@
 import abc
+from cmd import PROMPT
 import os
 from groq import Groq
 
@@ -24,6 +25,23 @@ class ILLMService(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+        """
+        Asks the LLM to suggets a better name for a variable.
+        """
+        pass
+
+    @abc.abstractmethod
+    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+        """Suggests a better name for a function or method."""
+        pass
+
+    @abc.abstractmethod
+    def evaluate_name(self, code_context: str, name: str) -> bool:
+        """Asks the LLM to evaluate if a name is high quality. Returns True if good."""
+        pass
+
 # --- Implementation (Adapter) ---
 
 class GroqAdapter(ILLMService):
@@ -36,8 +54,6 @@ class GroqAdapter(ILLMService):
             raise ValueError("Groq API key is required.")
         self.client = Groq(api_key=api_key)
         self.model = model
-
-        # TODO: make the model selection like the API_KEY
 
     def create_completion(self, prompt: str) -> str:
         """
@@ -86,3 +102,64 @@ class GroqAdapter(ILLMService):
         except Exception as e:
             print(f"Error during docstring evaluation: {e}")
             return True
+
+    
+    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+        prompt = f"""
+        Analyze the following Python code. The variable `{old_name}` has a poor name. Suggest a better, more descriptive variable name based on the usage in the code.
+
+        Code:
+
+        {code_context}
+
+        A good name should be descriptive, follow standard Python naming convention (snake_case), and not be a reserved keyword.
+
+        Return only the new variable name, and nothing else.
+        """
+        try: 
+            response = self.create_completion(prompt=prompt).strip()
+            # basic validation
+            if response and response.isidentifier():
+                return response
+            return None
+        except Exception as e:
+            print(f"Error suggesting name: {e}")
+            return None
+
+    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+        prompt = f"""
+        Analyze the following Python function/method. The name `{old_name}` is poor.
+        Suggest a better, more descriptive name that follows Python's snake_case convention.
+
+        Code:
+        
+        {code_context}
+                Return only the new function name, and nothing else.
+        """
+        try:
+            response = self.create_completion(prompt).strip()
+            if response and response.isidentifier():
+                return response
+            return None
+        except Exception as e:
+            print(f"Error suggesting function name: {e}")
+            return None
+
+    def evaluate_name(self, code_context: str, name: str) -> bool:
+        prompt = f"""
+        Analyze the following Python code and the name `{name}`.
+        Is the name a high-quality, descriptive, and contextually appropriate name for the variable, function, or class?
+        A good name is clear, concise, and follows standard Python conventions (e.g., snake_case for variables/functions).
+        A bad name is too short (like 'x' or 'd'), generic (like 'data' or 'temp'), or doesn't match what the code is doing.
+
+        Code:
+        
+        {code_context}
+                Answer with a single word: YES or NO.
+        """
+        try:
+            response = self.create_completion(prompt)
+            return "yes" in response.lower().strip()
+        except Exception as e:
+            print(f"Error during name evaluation: {e}")
+            return True 
