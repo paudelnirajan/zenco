@@ -1,0 +1,7 @@
+# This is a configuration file for this project.
+
+[tool.autodoc]
+# Settings for your AutoDoc tool
+strategy = "groq"
+style = "google"
+overwrite_existing = false
