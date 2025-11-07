@@ -1,6 +1,7 @@
 import abc
 import ast
 import os
+import sys
 from dotenv import load_dotenv
 from .llm_services import ILLMService, GroqAdapter
 
@@ -135,7 +136,13 @@ class GeneratorFactory:
             load_dotenv()
             api_key = os.getenv("GROQ_API_KEY")
             if not api_key:
-                raise ValueError("GROQ_API_KEY not found in .env file.")
+                print(
+                    "\nError: Groq API key not found.",
+                    "Please run `autodoc init` to configure your API key,",
+                    "or create a .env file with your GROQ_API_KEY.",
+                    sep="\n"
+                )
+                sys.exit(1)
 
             model_name = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
             
