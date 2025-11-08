@@ -1,15 +1,44 @@
-from os.path import isfile
 import os
 import pathspec
 import git
 
-def get_git_changed_files() -> list[str] | None:
-    """
-    Finds all the changed Python files in the current git repository.
-    Compares against the last commit. Includes staged, unstaged, and untracked files.
+SUPPORTED_EXTENSIONS = {".py", ".js"}
 
-    :return: A list of absolute paths to changed Python files, or None if not a git repo.
+def get_source_files(path: str) -> list[str]:
     """
+    Finds all supported source files in a given path, respecting .gitignore
+    """
+    if os.path.isfile(path):
+        if any(path.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+            return [os.path.abspath(path)]
+        return []
+
+    if not os.path.isdir(path):
+        print(f"Error: Path `{path}` is not valid file or directory.")
+        return []
+
+    gitignore_path = os.path.join(path, '.gitignore')
+    spec = None
+    if os.path.exists(gitignore_path):
+        with open(gitignore_path, 'r') as f:
+            patterns = f.read().splitlines()
+            patterns.extend(['.git/', 'venv/', '__pycache__/', 'node_modules/'])
+            spec = pathspec.PathSpec.from_lines('gitwildmatch', patterns)
+
+    source_files = []
+    for root, _, files in os.walk(path):
+        for file in files:
+            if any(file.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                full_path = os.path.join(root, file)
+                if spec and spec.match_file(full_path):
+                    continue
+                source_files.append(full_path)
+                
+    return source_files
+
+
+def get_git_changed_files() -> list[str] | None:
+    """Finds all changed/untracked supported source files in the current git repo."""
     try:
         repo = git.Repo(search_parent_directories=True)
         repo_root = repo.working_tree_dir

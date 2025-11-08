@@ -1,27 +1,42 @@
-import ast
+import collections
 
-class VariableRenamer(ast.NodeTransformer):
+class CodeTransformer:
     """
-    An AST transformer that renames all occurrences of a variable within the nodes it visits.
+    A class to manage and apply changes to a source code file.
+    Changes are collected and then applied in reverse order to avoid byte offset issues.
     """
-    def __init__(self, old_name: str, new_name: str):
-        self.old_name = old_name
-        self.new_name = new_name
+    def __init__(self, source_bytes: bytes):
+        self.source_bytes = source_bytes
+        self.changes = []
 
-    def visit_Name(self, node: ast.Name) -> ast.Name:
-        """
-        Called for every 'Name' node (i.e., a variable).
-        If the name matches our target, we rename it.
-        """
-        if node.id == self.old_name:
-            node.id = self.new_name
-        return node
+    def add_change(self, start_byte: int, end_byte: int, new_text: str):
+        """Adds a change to the list of pending transformations."""
+        self.changes.append({
+            "start_byte": start_byte,
+            "end_byte": end_byte,
+            "new_text": new_text.encode('utf8')
+        })
 
-    def visit_arg(self, node:ast.arg) -> ast.arg:
+    def apply_changes(self) -> bytes:
         """
-        Called for every function argument.
-        If the argument name matches our target, we rename it.
+        Applies all collected changes to the source code.
+        Sorts changes by start_byte in reverse order before applying to
+        ensure that subsequent changes do not affect the byte offsets of
+        earlier ones.
         """
-        if node.arg == self.old_name:
-            node.arg = self.new_name
-        return node
+        if not self.changes:
+            return self.source_bytes
+
+        self.changes.sort(key=lambda c: c['start_byte'], reverse=True)
+
+        source_parts = []
+        last_byte = len(self.source_bytes)
+
+        for change in self.changes:
+            source_parts.append(self.source_bytes[change['end_byte']:last_byte])
+            source_parts.append(change['new_text'])
+            last_byte = change['start_byte']
+
+        source_parts.append(self.source_bytes[:last_byte])
+
+        return b"".join(reversed(source_parts))

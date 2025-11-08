@@ -1,12 +1,14 @@
-import ast
 import argparse
 import sys
 import os
-import subprocess
-from .ast_handler import CodeQualityVisitor
+from textwrap import indent
+from tree_sitter import QueryCursor
 from .generators import GeneratorFactory, IDocstringGenerator
-from .utils import get_python_files, get_git_changed_files
+from .utils import get_source_files, get_git_changed_files
 from .config import load_config
+from .parser import get_language_parser, get_language_queries
+from .transformers import CodeTransformer
+import textwrap
 
 def init_config():
     """
@@ -58,97 +60,204 @@ def init_config():
     
     print(f"\nConfiguration saved to '{env_path}'.")
 
-def process_file(filepath: str, in_place: bool, strategy: str, overwrite_existing: bool, style: str, refactor: bool):
-    """Processes a single Python file for documentation and formatting."""
+
+def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool):
+    """
+    Processes a single file using the Tree-sitter engine to find and
+    report undocumented functions.
+    """
     print(f"--- Processing {filepath} ---")
 
-    if in_place:
-        print("Running 'black' formatter as a pre-processing step...")
-        try:
-            subprocess.run(["black", filepath], check=True, capture_output=True)
-        except FileNotFoundError:
-            print("Warning: 'black' command not found. Cannot pre-format file.")
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: 'black' failed to format the file, it may have severe syntax errors. Error: {e.stderr.decode()}")
+    lang = None
+    if filepath.endswith('.py'): lang = 'python'
+    elif filepath.endswith('.js'): lang = 'javascript'
+
+    parser = get_language_parser(lang)
+    if not parser: return
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as file:
-            source_code = file.read()
-    except (FileNotFoundError, UnicodeDecodeError) as e:
-        print(f"Error reading file: {e}")
+        with open(filepath, 'rb') as f:
+            source_bytes = f.read()
+    except IOError as e:
+        print(f"Error reading file: {e}"); return
+
+    tree = parser.parse(source_bytes)
+    transformer = CodeTransformer(source_bytes)
+    queries = get_language_queries(lang)
+
+    all_func_query = queries.get("all_functions")
+    documented_funcs_query = queries.get("documented_function")
+
+    if not all_func_query or not documented_funcs_query:
+        print(f"Warning: Queries for `{lang}` not fully defined. Skipping.")
         return
 
-    try:
-        tree = ast.parse(source_code)
-    except SyntaxError as e:
-        print(f"Error parsing AST: {e}")
-        return
-
-    generator: IDocstringGenerator = GeneratorFactory.create_generator(
-        strategy=strategy, style=style
-    )
+    # Use QueryCursor to execute queries (tree-sitter 0.25 API)
+    # QueryCursor requires the query in the constructor
+    all_func_cursor = QueryCursor(all_func_query)
+    documented_func_cursor = QueryCursor(documented_funcs_query)
     
-    visitor = CodeQualityVisitor(
-        generator=generator, 
-        overwrite_existing=overwrite_existing,
-        refactor=refactor
-    )
-    visitor.visit(tree)
+    # Get all functions (matches returns (pattern_index, {capture_name: [nodes]}) tuples)
+    all_functions = set()
+    for pattern_index, captures in all_func_cursor.matches(tree.root_node):
+        if 'func' in captures:
+            all_functions.update(captures['func'])
+    
+    # Get documented functions
+    documented_funtions = set()
+    for pattern_index, captures in documented_func_cursor.matches(tree.root_node):
+        if 'func' in captures:
+            documented_funtions.update(captures['func'])
+    
+    # Also manually check for docstrings as a fallback (in case query doesn't match)
+    # A function has a docstring if its first statement is a string literal
+    for func_node in all_functions:
+        body_node = func_node.child_by_field_name("body")
+        if body_node and body_node.children:
+            first_stmt = body_node.children[0]
+            # Check if first statement is an expression statement with a string
+            if first_stmt.type == 'expression_statement':
+                expr = first_stmt.children[0] if first_stmt.children else None
+                if expr and expr.type == 'string':
+                    documented_funtions.add(func_node)
 
-    if visitor.tree_modified:
-        new_code = ast.unparse(tree)
-        
-        if in_place:
-            print(f"Writing changes back to {filepath}...")
-            try:
-                with open(filepath, 'w', encoding='utf-8') as file:
-                    file.write(new_code)
+    undocumented_functions = all_functions - documented_funtions
+
+    for func_node in undocumented_functions:
+        name_node = func_node.child_by_field_name('name')
+        if name_node:
+            func_name = name_node.text.decode('utf8')
+            line_num = name_node.start_point[0] + 1
+            print(f"L{line_num}:[Docstring] Generating for function `{func_name}`.", flush=True)
+            
+            docstring = generator.generate(func_node)
+            
+            # For Python, we need to find where the body of the function starts
+            # to inject the docstring with the correct indentation.
+            body_node = func_node.child_by_field_name("body")
+            if body_node and body_node.children:
+                try:
+                    # Get the function definition's indentation by reading the source line
+                    # This is more reliable than using tree-sitter's start_point
+                    source_text = source_bytes.decode('utf8')
+                    func_start_line = func_node.start_point[0]
+                    func_line = source_text.split('\n')[func_start_line]
+                    func_def_indent = len(func_line) - len(func_line.lstrip())
+                    
+                    # Standard Python indentation is 4 spaces from the function definition
+                    # We'll use this consistently to avoid issues with malformed code
+                    body_indent_level = func_def_indent + 4
+                    indentation_str = ' ' * body_indent_level
+                    first_child = body_node.children[0]
+                except Exception as e:
+                    print(f"  ERROR in indentation calculation: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    continue
+
+                # Clean the raw docstring from the LLM (remove any existing indentation)
+                docstring_content_raw = docstring.strip()
                 
-                print("Running 'black' formatter for final cleanup...")
-                subprocess.run(["black", filepath], check=True, capture_output=True, text=True)
-                print("Formatting complete.")
+                # Use textwrap.dedent to remove common leading whitespace
+                # This handles cases where the LLM returns pre-indented content
+                dedented_content = textwrap.dedent(docstring_content_raw).strip()
+                
+                # Re-indent the cleaned content to match the function's body indentation
+                # indent() adds the prefix to each line, including empty lines
+                indented_content = indent(dedented_content, indentation_str)
 
+                # Assemble the final, perfectly formatted docstring
+                formatted_docstring = (
+                    f'{indentation_str}"""\n'
+                    f'{indented_content}\n'
+                    f'{indentation_str}"""\n'
+                )
+
+                # Check if first_child is already a docstring
+                is_docstring = (first_child.type == 'expression_statement' and 
+                               first_child.children and 
+                               first_child.children[0].type == 'string')
+                
+                if is_docstring:
+                    # Replace the existing docstring
+                    # Find the start of the line to replace any incorrect indentation
+                    first_stmt_line_num = first_child.start_point[0]
+                    lines = source_text.split('\n')
+                    line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])
+                    
+                    insertion_point = line_start_byte
+                    end_point = first_child.end_byte
+                    formatted_docstring = formatted_docstring.rstrip() + '\n' + indentation_str
+                    transformer.add_change(
+                        start_byte=insertion_point,
+                        end_byte=end_point,
+                        new_text=formatted_docstring
+                    )
+                else:
+                    # Insert before the first statement
+                    # We need to find the actual start of the line and replace any incorrect indentation
+                    # first_child.start_point gives us (line, column)
+                    first_stmt_line_num = first_child.start_point[0]
+                    first_stmt_col = first_child.start_point[1]
+                    
+                    # Find the start of this line in the source
+                    lines = source_text.split('\n')
+                    line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])  # +1 for \n
+                    
+                    # The insertion point is at the start of the line
+                    # We'll replace from line start to the actual statement start
+                    # This removes any incorrect indentation
+                    insertion_point = line_start_byte
+                    end_point = first_child.start_byte
+                    
+                    # Add proper indentation before the statement
+                    formatted_docstring = formatted_docstring + indentation_str
+                    
+                    transformer.add_change(
+                        start_byte=insertion_point,
+                        end_byte=end_point,
+                        new_text=formatted_docstring
+                    )
+
+    new_code = transformer.apply_changes()
+    if in_place:
+        if new_code != source_bytes:
+            print("  - Writing changes to file.")
+            try:
+                with open(filepath, 'wb') as f:
+                    f.write(new_code)
             except IOError as e:
                 print(f"Error writing to file: {e}")
         else:
-            print("\nModified code (use --in-place to save):")
-            try:
-                formatted_code = subprocess.check_output(["black", "-"], input=new_code, text=True)
-                print("-" * 40)
-                print(formatted_code)
-                print("-" * 40)
-            except (FileNotFoundError, subprocess.CalledProcessError):
-                 print("-" * 40)
-                 print(new_code) 
-                 print("-" * 40)
+            print("  - No changes to apply.")
     else:
-        print("No modifications made.")
-
+        # Print to console if not in_place
+        print("\n--- Generated Code (Dry Run) ---\n")
+        print(new_code.decode('utf8'))
 
 
 def run_autodoc(args):
-    """The main entry point for running the analysis and refactoring."""
+    """The main entry point for running the analysis."""
     if args.diff:
         print("Processing files with git changes...")
-        python_files = get_git_changed_files()
-        if python_files is None: sys.exit(1)
+        source_files = get_git_changed_files()
+        if source_files is None: sys.exit(1)
     else:
-        python_files = get_python_files(args.path)
+        source_files = get_source_files(args.path)
     
-    if not python_files:
-        print("No Python files found to process.")
-        return
+    if not source_files:
+        print("No source files found to process."); return
 
-    print(f"Found {len(python_files)} Python file(s) to process.")
+    print(f"Found {len(source_files)} file(s) to process.")
     
-    for filepath in python_files:
-        process_file(
-            filepath=filepath,
-            in_place=args.in_place,
-            strategy=args.strategy,
-            overwrite_existing=args.overwrite_existing,
-            style=args.style,
-            refactor=args.refactor
+    try:
+        generator = GeneratorFactory.create_generator(args.strategy, args.style)
+    except ValueError as e:
+        print(f"Error: {e}"); sys.exit(1)
+
+    for filepath in source_files:
+        process_file_with_treesitter(filepath=filepath, generator=generator,
+        in_place=args.in_place,
         )
         print("-" * 50)
 
@@ -156,27 +265,25 @@ def run_autodoc(args):
 def main():
     """Main CLI entry point with subcommand routing."""
     parser = argparse.ArgumentParser(
-        description="AutoDoc AI: An AI-powered tool to document, refactor, and format Python code.",
-        epilog="For detailed help on a command, run: 'autodoc <command> --help' (e.g., 'autodoc run --help')"
+        description="AutoDoc AI: A polyglot AI-powered code tool.",
+        epilog="For detailed help on a command, run: 'autodoc <command> --help'"
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands", required=True)
 
-    parser_init = subparsers.add_parser("init", help="Initialize AutoDoc configuration (create .env file).")
+    parser_init = subparsers.add_parser("init", help="Initialize AutoDoc configuration.")
     parser_init.set_defaults(func=lambda args: init_config())
 
     config = load_config()
-    parser_run = subparsers.add_parser("run", help="Analyze and process Python files.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser_run = subparsers.add_parser("run", help="Analyze and process source code files.", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     
-    parser_run.add_argument("path", nargs='?', default='.', help="Path to process (file or directory).")
-    parser_run.add_argument("--diff", action="store_true", help="Only process files with git changes.")
-    parser_run.add_argument("--strategy", choices=["mock", "groq"], default=config['strategy'], help="Docstring generation strategy.")
-    parser_run.add_argument("--style", choices=["google", "numpy", "rst"], default=config['style'], help="Docstring style to enforce.")
-    parser_run.add_argument("--in-place", action="store_true", help="Modify files in place.")
-    
-    overwrite_default = config.get('overwrite_existing', False)
-    refactor_default = config.get('refactor', False)
-    parser_run.add_argument("--overwrite-existing", action="store_true", default=overwrite_default, help="Regenerate poor-quality docstrings.")
-    parser_run.add_argument("--refactor", action="store_true", default=refactor_default, help="Enable AI-powered refactoring.")
+    parser_run.add_argument("path", nargs='?', default='.', help="Path to process.")
+    parser_run.add_argument("--diff", action="store_true", help="Only process git-changed files.")
+    parser_run.add_argument("--strategy", choices=["mock", "groq"], default=config.get('strategy', 'mock'))
+    parser_run.add_argument("--style", choices=["google", "numpy", "rst"], default=config.get('style', 'google'))
+    parser_run.add_argument("--in-place", action="store_true")
+    parser_run.add_argument("--overwrite-existing", action="store_true")
+    parser_run.add_argument("--refactor", action="store_true")
+
     parser_run.set_defaults(func=run_autodoc)
 
     args = parser.parse_args()
