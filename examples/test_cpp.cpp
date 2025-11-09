@@ -1,143 +1,161 @@
 #include <iostream>
 #include <vector>
-#include <string>
+#include <cmath>
 
-// This function processes an order and applies a discount and tax
-constexpr auto QUANTITY_DISCOUNT_THRESHOLD = 10;
-constexpr auto BULK_DISCOUNT_MULTIPLIER = 0.9;
-constexpr auto TEXAS_STATE_CODE = 42;
-constexpr auto TEXAS_TAX_MULTIPLIER = 1.08;
-constexpr auto COLORADO_STATE_CODE = 12;
-constexpr auto COLORADO_TAX_MULTIPLIER = 1.05;
-constexpr auto SIGNATURE_BYTE_0 = 0xAB;
-constexpr auto SIGNATURE_BYTE_2 = 0xEF;
-constexpr auto NULL_TERMINATOR = 0x00;
-constexpr auto BASE_ITEM_PRICE = 25.50;
-constexpr auto SIGNATURE_BYTE_1 = 0xCD;
+constexpr auto PI = 3.14159;
+constexpr auto MAX_RETRIES = 3;
+constexpr auto TAX_RATE = 0.15;
+constexpr auto MINIMUM_PRICE_FOR_DISCOUNT = 100;
+constexpr auto DISCOUNT_MULTIPLIER = 0.9;
 
-constexpr auto QUANTITY_DISCOUNT_THRESHOLD = QUANTITY_DISCOUNT_THRESHOLD;
-constexpr auto BULK_DISCOUNT_MULTIPLIER = BULK_DISCOUNT_MULTIPLIER;
-constexpr auto TEXAS_STATE_CODE = TEXAS_STATE_CODE;
-constexpr auto TEXAS_TAX_MULTIPLIER = TEXAS_TAX_MULTIPLIER;
-constexpr auto COLORADO_STATE_CODE = COLORADO_STATE_CODE;
-constexpr auto COLORADO_TAX_MULTIPLIER = COLORADO_TAX_MULTIPLIER;
-constexpr auto SIGNATURE_BYTE_0 = SIGNATURE_BYTE_0;
-constexpr auto BUFFER_PREAMBLE_BYTE_2 = SIGNATURE_BYTE_2;
-
-constexpr auto NULL_TERMINATOR = NULL_TERMINATOR;
-constexpr auto BASE_ITEM_PRICE = BASE_ITEM_PRICE;
-
-
-
+const double PI = PI;
+MAX_RETRIES;
 
 /**
- * Calculates the final price of an item after applying discounts and taxes.
+ * Calculates the area of a circle given its radius.
  * 
- * This function first computes the subtotal by multiplying the item price by the
- * quantity. A bulk discount is applied if the quantity exceeds a predefined
- * threshold. Finally, a state-specific sales tax is added to the total based
- * on the provided state code.
+ * This function computes the area using the formula A = π * r^2. It assumes
+ * the existence of a pre-defined `PI` constant.
  * 
  * Args:
- *   price: The price of a single item.
- *   quantity: The number of items being purchased.
- *   state_code: The numerical code representing the U.S. state for tax
- *     calculation purposes.
+ *   radius: The radius of the circle. Should be a non-negative value.
  * 
  * Returns:
- *   The final calculated price, including any applicable bulk discounts and
- *   state taxes.
+ *   The area of the circle as a double.
  */
-double calculate_final_price(double price, int quantity, int state_code) {
-    int abcsdfgh = 876862345;
-    double total = price * quantity;
-
-    // Apply a discount if quantity is over a certain amount
-    if (quantity > QUANTITY_DISCOUNT_THRESHOLD) { // What does '10' signify? Max items for no discount?
-        total = total * BULK_DISCOUNT_MULTIPLIER; // What does '0.9' mean? A 10% discount?
-    }
-
-    // Apply specific tax rates based on state code
-    if (state_code == TEXAS_STATE_CODE) { // Is '42' Texas, or something else?
-        total = total * TEXAS_TAX_MULTIPLIER; // Is '1.08' a specific tax rate (8%)?
-    } else if (state_code == COLORADO_STATE_CODE) { // Is '12' Colorado?
-        total = total * COLORADO_TAX_MULTIPLIER; // Is '1.05' a specific tax rate (5%)?
-    }
-    // Other state codes and tax rates would continue here...
-
-    return total;
+double calculateArea(double radius) {
+    return PI * radius * radius;
 }
 
-
 /**
- * Initializes a communication buffer with a standard preamble and terminator.
+ * Multiplies each element in a vector of integers by a given multiplier.
  * 
- * This function populates the beginning and end of a given character buffer
- * with specific values to prepare it for a data transmission or processing
- * protocol. It sets a two-byte signature (SIGNATURE_BYTE_0, 0xCD), a
- * preamble byte (BUFFER_PREAMBLE_BYTE_2), and a null terminator at a
- * predefined index.
+ * This function iterates through the input vector, multiplies each element
+ * by the provided multiplier, and stores the result in a new vector. The
+ * original input vector is not modified.
  * 
  * Args:
- *   buffer: An output pointer to the character buffer to be initialized. The
- *     contents of this buffer will be modified.
+ *   items: A constant reference to a vector of integers to be processed.
+ *   multiplier: The integer value to multiply each element in `items` by.
  * 
- * Note:
- *   The caller is responsible for ensuring that the buffer is allocated with
- *   sufficient memory. The buffer size must be at least
- *   `TERMINATOR_INDEX + 1` bytes to prevent out-of-bounds writes.
+ * Returns:
+ *   A new std::vector<int> where each element is the product of the
+ *   corresponding element in the input vector and the multiplier.
  */
-void setup_buffer(unsigned char* buffer) {
-    buffer[0] = SIGNATURE_BYTE_0; 
-    buffer[1] = SIGNATURE_BYTE_1; 
-    buffer[2] = BUFFER_PREAMBLE_BYTE_2; 
-    buffer[TERMINATOR_INDEX] = NULL_TERMINATOR;
+std::vector<int> processItems(const std::vector<int>& items, int multiplier) {
+    std::vector<int> result;
+    for (int item : items) {
+        result.push_back(item * multiplier);
+    }
+    return result;
 }
+
 /**
- * Initializes a buffer with a protocol-specific header and a null terminator.
+ * Attempts to execute a given operation up to a maximum number of times.
  * 
- * Populates the provided buffer with a standard header structure by writing
- * signature and preamble bytes to the first three positions. It also writes a
- * null terminator at the position specified by `TERMINATOR_INDEX`.
- * 
- * The caller is responsible for allocating a buffer of sufficient size
- * (at least `TERMINATOR_INDEX + 1` bytes) before calling this function.
+ * This function provides a simple retry mechanism. It repeatedly calls the provided
+ * `operation` function until it returns true or until `maxAttempts` have been
+ * made. This is useful for operations that might fail transiently.
  * 
  * Args:
- *   buffer: A pointer to the pre-allocated buffer to be initialized. The
- *     contents of this buffer will be overwritten.
+ *   operation: A pointer to a function that performs the desired operation.
+ *     The function should take no arguments and return true on success and
+ *     false on failure.
+ *   maxAttempts: The maximum number of times to try the operation before giving
+ *     up.
+ * 
+ * Returns:
+ *   true if the operation succeeds within the given number of attempts,
+ *   false otherwise.
  */
-void setup_buffer(unsigned char* buffer) {
+bool retryOperation(bool (*operation)(), int maxAttempts) {
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+        if (operation()) {
+            return true;
+        }
+    }
+    return false;
+}
 
-    buffer[0] = SIGNATURE_BYTE_0; 
-    buffer[1] = SIGNATURE_BYTE_1; 
-    buffer[2] = BUFFER_PREAMBLE_BYTE_2; 
-    buffer[TERMINATOR_INDEX] = NULL_TERMINATOR;
+// Dead code - should be detected
+/**
+ * An unused demonstration function.
+ * 
+ * This function is not called from anywhere in the codebase and serves as a
+ * placeholder or an example of dead code. It initializes local variables and
+ * prints a value to the standard output, but has no other side effects.
+ */
+void unusedFunction() {
+    int x = 42;
+    std::string y = "dead code";
+    std::cout << x << std::endl;
+}
 
+/**
+ * A demonstration function that prints a value to standard output.
+ * 
+ * Initializes two local variables, one integer and one string. The value of the
+ * integer is printed to `std::cout`, while the string variable is unused.
+ * This function serves as a simple example and has no return value.
+ */
+void anotherDeadFunc() {
+    int unusedVar = 123;
+    std::string anotherUnused = "test";
+    std::cout << unusedVar << std::endl;
+}
+
+// Unused variables
+
+
+
+// Magic numbers
+/**
+ * Calculates the tax for a given amount.
+ * 
+ * This function applies a fixed tax rate of 15% to the input amount.
+ * 
+ * Args:
+ *   amount: The principal amount on which the tax is calculated.
+ * 
+ * Returns:
+ *   The calculated tax amount.
+ */
+double calculateTax(double amount) {
+    return amount * TAX_RATE;
+}
+
+/**
+ * Calculates the final price after applying a conditional discount.
+ * 
+ * A 10% discount is applied if the input price is greater than 100.
+ * Otherwise, the original price is returned.
+ * 
+ * Args:
+ *   price: The original price of the item before any discounts.
+ * 
+ * Returns:
+ *   The final price after the discount is applied, if applicable.
+ */
+double calculateDiscount(double price) {
+    if (price > MINIMUM_PRICE_FOR_DISCOUNT) {
+        return price * DISCOUNT_MULTIPLIER;
+    }
+    return price;
 }
 
 /**
  * The main entry point for the application.
  * 
- * This function demonstrates two primary operations: calculating the final price for
- * an order and setting up a file signature buffer. It initializes order
- * details (item price, quantity, shipping state), calculates the final cost
- * using the `calculate_final_price` function, and prints the result to the
- * console. It also showcases buffer initialization by calling `setup_buffer`.
+ * Demonstrates the use of the `calculateArea` and `processItems` functions.
+ * It calculates the area for a predefined value, processes a sample vector of
+ * integers, and prints the results to the standard output.
  * 
  * Returns:
- *     An integer exit code. Returns 0 on successful execution.
+ *     0 on successful execution.
  */
 int main() {
-    double item_price = BASE_ITEM_PRICE;
-    int items_ordered = 15;
-    int shipping_state = TEXAS_STATE_CODE;
-
-    double final_cost = calculate_final_price(item_price, items_ordered, shipping_state);
-    std::cout << "Final cost: $" << final_cost << std::endl;
-
-    unsigned char file_signature[FILE_SIGNATURE_SIZE];
-    setup_buffer(file_signature);
-
+    double area = calculateArea(5.0);
+    std::vector<int> data = processItems({1, 2, MAX_RETRIES, 4, 5}, 2);
+    std::cout << "Area: " << area << ", Data length: " << data.size() << std::endl;
     return 0;
 }

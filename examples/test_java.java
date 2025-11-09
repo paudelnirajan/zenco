@@ -1,81 +1,147 @@
-public class Calculator {
+public class TestJava {
     private static final double PI = 3.14159;
-    private static final int DISCOUNT_PERCENTAGE = 10;
-    private static final int MINIMUM_AGE_FOR_PROMOTION = 18;
-    private static final int MINIMUM_YEARS_OF_SERVICE = 5;
-    private static final int LARGE_ORDER_THRESHOLD = 100;
+    private static final int MAX_RETRIES = 3;
+    private static final double TAX_RATE = 0.15;
+    private static final int MINIMUM_PRICE_FOR_DISCOUNT = 100;
+    private static final double DISCOUNT_MULTIPLIER = 0.9;
+    private static final double RADIUS = 5.0;
 
+    
     private static final double PI = PI;
-    private static final int DISCOUNT_PERCENTAGE = DISCOUNT_PERCENTAGE;
-    private static final int MINIMUM_AGE_FOR_PROMOTION = MINIMUM_AGE_FOR_PROMOTION;
-    private static final int MINIMUM_YEARS_OF_SERVICE = MINIMUM_YEARS_OF_SERVICE;
-    private static final int LARGE_ORDER_THRESHOLD = LARGE_ORDER_THRESHOLD;
-
-    int abc = LARGE_ORDER_THRESHOLD;
-
-
+    MAX_RETRIES;
+    
     /**
      * Calculates the area of a circle given its radius.
      * 
-     * @param radius the radius of the circle. Must be a non-negative value.
-     * @return the area of the circle
+     * @param radius the non-negative radius of the circle.
+     * @return the area of the circle.
      */
-    public double calculateArea(double radius) {
-        int abcdc = LARGE_ORDER_THRESHOLD;
-        // Bad magic number: 3.14159 is Pi, but it's not explicitly named.
-        return radius * radius * PI; 
+    public static double calculateArea(double radius) {
+        return PI * radius * radius;
     }
-
+    
     /**
-     * Calculates the price of an item after applying a 10% discount.
+     * Multiplies each element of an integer array by a given multiplier.
      * 
-     * The discount is fixed at 10% of the original price. The calculation uses integer division,
-     * which may result in truncation for the discount amount.
+     * <p>This method creates a new array of the same size, where each element is the product of the
+     * corresponding element in the input array and the multiplier. The original array is not modified.
      * 
-     * @param originalPrice the starting price of the item before the discount is applied
-     * @return the new price after subtracting the 10% discount
+     * @param items the array of integers to be processed.
+     * @param multiplier the integer value to multiply each item by.
+     * @return a new array containing the results of the multiplication.
      */
-    public int calculateDiscountedPrice(int originalPrice) {
-        int abc = LARGE_ORDER_THRESHOLD;
-        // Another bad magic number: 10 represents a 10% discount, but its meaning is unclear.
-        return originalPrice - (originalPrice / DISCOUNT_PERCENTAGE); 
+    public static int[] processItems(int[] items, int multiplier) {
+        int[] result = new int[items.length];
+        for (int i = 0; i < items.length; i++) {
+            result[i] = items[i] * multiplier;
+        }
+        return result;
     }
-
+    
     /**
-     * Checks the promotion eligibility of an individual based on age and service years.
+     * Retries a given operation until it succeeds or the maximum number of attempts is reached.
      * 
-     * Eligibility is determined by two criteria: the individual must be at least 18 years
-     * of age and must have completed a minimum of 5 years of service with the company.
+     * This method repeatedly calls the `run()` method of the provided `Runnable`. If the operation
+     * completes without throwing an `Exception`, it is considered successful. If an exception is
+     * caught, the attempt is considered a failure, and the operation is retried.
      * 
-     * @param age The age of the individual in years.
-     * @param yearsOfService The number of full years the individual has been with the company.
-     * @return {@code true} if the individual meets the promotion criteria, {@code false} otherwise.
+     * <p>Note: This is a simple retry mechanism with no delay or backoff strategy between attempts.
+     * 
+     * @param operation The `Runnable` task to execute. A successful execution is one that does not
+     *                   throw an exception.
+     * @param maxAttempts The total number of times to attempt the operation. If this value is less
+     *                    than 1, the operation will not be attempted.
+     * @return {@code true} if the operation succeeds within the given number of attempts;
+     *         {@code false} otherwise.
      */
-    public boolean isEligibleForPromotion(int age, int yearsOfService) {
-        // More magic numbers: 18 and 5 are thresholds without clear explanations.
-        if (age >= MINIMUM_AGE_FOR_PROMOTION && yearsOfService >= MINIMUM_YEARS_OF_SERVICE) { 
-            return true;
+    public static boolean retryOperation(Runnable operation, int maxAttempts) {
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                operation.run();
+                return true;
+            } catch (Exception e) {
+                if (attempt == maxAttempts - 1) {
+                    return false;
+                }
+            }
         }
         return false;
     }
-
+    
+    // Dead code - should be detected
     /**
-     * Processes an order for a specified item and quantity.
+     * A placeholder function that is not used within the codebase.
      * 
-     * This method handles the initial processing of a customer order. It differentiates
-     * between standard and large orders based on the quantity. If the quantity
-     * exceeds 100, the order is flagged as 'large'; otherwise, it's considered a
-     * 'standard' order. The processing status is printed to the console.
+     * This method was likely created for testing or as a template and has since been
+     * abandoned. It serves no purpose in the application's logic.
      * 
-     * @param item The name of the item being ordered.
-     * @param quantity The number of units of the item being ordered.
+     * @deprecated This function is considered dead code and should be removed.
      */
-    public void processOrder(String item, int quantity) {
-        // Magic number 100: Could represent a minimum order quantity, a threshold for free shipping, etc.
-        if (quantity > LARGE_ORDER_THRESHOLD) { 
-            System.out.println("Processing large order for: " + item);
-        } else {
-            System.out.println("Processing standard order for: " + item);
+    private static void unusedFunction() {
+        int x = 42;
+        String y = "dead code";
+        System.out.println(x);
+    }
+    
+    /**
+     * An example of an unused function that prints a hardcoded value.
+     * 
+     * <p>This method is considered dead code. It initializes local variables, prints one to standard
+     * output, and is not called within the application.
+     * 
+     * @deprecated This function serves no purpose and should be removed.
+     */
+    private static void anotherDeadFunc() {
+        int unusedVar = 123;
+        String anotherUnused = "test";
+        System.out.println(unusedVar);
+    }
+    
+    // Unused variables
+    
+    
+    
+    // Magic numbers
+    /**
+     * Calculates the tax for a given amount at a fixed rate of 15%.
+     * 
+     * @param amount the principal amount on which to calculate the tax.
+     * @return the calculated tax amount.
+     */
+    public static double calculateTax(double amount) {
+        return amount * TAX_RATE;
+    }
+    
+    /**
+     * Calculates a 10% discount for prices over 100.
+     * 
+     * If the provided price is greater than 100, a 10% discount is applied. For prices
+     * of 100 or less, the original price is returned unchanged.
+     * 
+     * @param price The original price of the item.
+     * @return The price after the discount is applied, or the original price if no
+     *     discount was applied.
+     */
+    public static double calculateDiscount(double price) {
+        if (price > MINIMUM_PRICE_FOR_DISCOUNT) {
+            return price * DISCOUNT_MULTIPLIER;
         }
+        return price;
+    }
+    
+    /**
+     * The main entry point for the application.
+     * 
+     * <p>This method serves as a demonstration for the {@code calculateArea} and
+     * {@code processItems} methods. It calls these methods with sample data and
+     * prints their results to the standard output.
+     * 
+     * @param args The command-line arguments. Not used in this implementation.
+     */
+    public static void main(String[] args) {
+        double area = calculateArea(RADIUS);
+        int[] data = processItems(new int[]{1, 2, MAX_RETRIES, 4, 5}, 2);
+        System.out.println("Area: " + area);
+        System.out.println("Data length: " + data.length);
     }
 }
