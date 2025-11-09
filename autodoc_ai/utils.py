@@ -1,6 +1,7 @@
 import os
 import pathspec
 import git
+from typing import Optional
 
 SUPPORTED_EXTENSIONS = {
     '.py', 
@@ -45,7 +46,7 @@ def get_source_files(path: str) -> list[str]:
     return source_files
 
 
-def get_git_changed_files() -> list[str] | None:
+def get_git_changed_files() -> Optional[list[str]]:
     """Finds all changed/untracked supported source files in the current git repo."""
     try:
         repo = git.Repo(search_parent_directories=True)

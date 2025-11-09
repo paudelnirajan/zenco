@@ -1,4 +1,5 @@
 from tree_sitter import Parser, Query, Language
+from typing import Optional
 from tree_sitter_python import language as python_language
 from tree_sitter_javascript import language as javascript_language
 from tree_sitter_java import language as java_language
@@ -13,7 +14,7 @@ LANGUAGES = {
    "cpp": Language(cpp_language()),
 }
 
-def get_language_parser(language_name: str) -> Parser | None:
+def get_language_parser(language_name: str) -> Optional[Parser]:
     """Returns a pre-configured Tree-sitter parser for a given language."""
     language = LANGUAGES.get(language_name)
     if not language:

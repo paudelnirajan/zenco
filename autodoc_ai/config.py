@@ -1,5 +1,6 @@
 import os
-from typing import Any, Dict
+import sys
+from typing import Any, Dict, Optional
 
 # This block makes the code compatible with Python < 3.11 and >= 3.11
 try:
@@ -9,7 +10,7 @@ except ImportError:
     # For older Python versions, use the tomli library as a fallback
     import tomli as tomllib
 
-def find_pyproject_toml(start_dir: str) -> str | None:
+def find_pyproject_toml(start_dir: str) -> Optional[str]:
     """
     Finds the pyproject.toml file by searching upwards from a starting directory.
     """

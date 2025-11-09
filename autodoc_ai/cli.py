@@ -8,7 +8,7 @@ from tree_sitter import Language, Query
 from .generators import GeneratorFactory, IDocstringGenerator
 from .utils import get_source_files, get_git_changed_files
 from .config import load_config
-from .parser import get_language_parser, get_language_queries
+from .parser import get_language_parser, get_language_queries, LANGUAGES
 from .transformers import CodeTransformer
 import textwrap
 from .formatters import FormatterFactory
@@ -181,6 +181,10 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
 
     parser = get_language_parser(lang)
     if not parser: return
+    
+    # Get the language object for Query constructor
+    language = LANGUAGES.get(lang)
+    if not language: return
 
     try:
         with open(filepath, 'rb') as f:
@@ -199,26 +203,25 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         print(f"Warning: Queries for `{lang}` not fully defined. Skipping.")
         return
 
-    # Use QueryCursor to execute queries (tree-sitter 0.25 API)
-    # QueryCursor requires the query in the constructor
-    all_func_cursor = QueryCursor(all_func_query)
-    documented_func_cursor = QueryCursor(documented_funcs_query)
+    # Use Query API to execute queries
+    all_func_query_obj = Query(language, all_func_query)
+    documented_func_query_obj = Query(language, documented_funcs_query)
     
     # Get all functions (matches returns (pattern_index, {capture_name: [nodes]}) tuples)
     all_functions = set()
-    for _, captures in all_func_cursor.matches(tree.root_node):
+    for _, captures in all_func_query_obj.matches(tree.root_node):
         for node in captures.get('func', []):
             all_functions.add(node)
     
     documented_nodes = {}
-    for _, captures in documented_func_cursor.matches(tree.root_node):
+    for _, captures in documented_func_query_obj.matches(tree.root_node):
         func_nodes = captures.get('func', [])
         doc_nodes = captures.get('docstring', [])
         for i, func_node in enumerate(func_nodes):
             if i < len(doc_nodes):
                 documented_nodes[func_node] = doc_nodes[i]
     
-    documented_funtions = set(documented_nodes.keys())
+    documented_functions = set(documented_nodes.keys())
     
     # Also manually check for docstrings as a fallback (in case query doesn't match)
     # A function has a docstring if its first statement is a string literal
@@ -230,10 +233,10 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             if first_stmt.type == 'expression_statement':
                 expr = first_stmt.children[0] if first_stmt.children else None
                 if expr and expr.type == 'string':
-                    documented_funtions.add(func_node)
+                    documented_functions.add(func_node)
                     documented_nodes[func_node] = expr
 
-    undocumented_functions = all_functions - documented_funtions
+    undocumented_functions = all_functions - documented_functions
 
     for func_node in undocumented_functions:
         if not docstrings_enabled:
@@ -403,10 +406,10 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         typing_imports_needed = set()
         
         if typed_funcs_query:
-            typed_func_cursor = QueryCursor(typed_funcs_query)
+            typed_func_query_obj = Query(language, typed_funcs_query)
             functions_with_hints = set()
             
-            for _, captures in typed_func_cursor.matches(tree.root_node):
+            for _, captures in typed_func_query_obj.matches(tree.root_node):
                 for node in captures.get('func', []):
                     functions_with_hints.add(node)
             
@@ -552,12 +555,12 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         numeric_query = queries.get("numeric_literals")
         
         if numeric_query:
-            numeric_cursor = QueryCursor(numeric_query)
+            numeric_query_obj = Query(language, numeric_query)
             
             # Collect all magic numbers with their context
             magic_numbers = {}  # {value: [(node, function_context), ...]}
             
-            for _, captures in numeric_cursor.matches(tree.root_node):
+            for _, captures in numeric_query_obj.matches(tree.root_node):
                 for node in captures.get('number', []):
                     value = node.text.decode('utf8')
                     
@@ -650,9 +653,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     elif fix_magic_numbers and lang == 'javascript':
         numeric_query = queries.get("numeric_literals")
         if numeric_query:
-            numeric_cursor = QueryCursor(numeric_query)
+            numeric_query_obj = Query(language, numeric_query)
             magic_numbers = {}
-            for _, captures in numeric_cursor.matches(tree.root_node):
+            for _, captures in numeric_query_obj.matches(tree.root_node):
                 for node in captures.get('number', []):
                     value = node.text.decode('utf8')
                     if value in ['0', '1', '-1', '2']:
@@ -705,9 +708,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     elif fix_magic_numbers and lang == 'java':
         numeric_query = queries.get("numeric_literals")
         if numeric_query:
-            numeric_cursor = QueryCursor(numeric_query)
+            numeric_query_obj = Query(language, numeric_query)
             magic_numbers = {}
-            for _, captures in numeric_cursor.matches(tree.root_node):
+            for _, captures in numeric_query_obj.matches(tree.root_node):
                 for node in captures.get('number', []):
                     value = node.text.decode('utf8')
                     if value in ['0', '1', '-1', '2']:
@@ -767,9 +770,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     elif fix_magic_numbers and lang == 'go':
         numeric_query = queries.get("numeric_literals")
         if numeric_query:
-            numeric_cursor = QueryCursor(numeric_query)
+            numeric_query_obj = Query(language, numeric_query)
             magic_numbers = {}
-            for _, captures in numeric_cursor.matches(tree.root_node):
+            for _, captures in numeric_query_obj.matches(tree.root_node):
                 for node in captures.get('number', []):
                     value = node.text.decode('utf8')
                     if value in ['0', '1', '-1', '2']:
@@ -819,9 +822,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     elif fix_magic_numbers and lang == 'cpp':
         numeric_query = queries.get("numeric_literals")
         if numeric_query:
-            numeric_cursor = QueryCursor(numeric_query)
+            numeric_query_obj = Query(language, numeric_query)
             magic_numbers = {}
-            for _, captures in numeric_cursor.matches(tree.root_node):
+            for _, captures in numeric_query_obj.matches(tree.root_node):
                 for node in captures.get('number', []):
                     value = node.text.decode('utf8')
                     if value in ['0', '1', '-1', '2']:

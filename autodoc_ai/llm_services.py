@@ -1,6 +1,7 @@
 import abc
 from cmd import PROMPT
 import os
+from typing import Optional
 from groq import Groq
 
 # ---- Interface (Contract) ----
@@ -26,14 +27,14 @@ class ILLMService(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_name(self, code_context: str, old_name: str) -> Optional[str]:
         """
         Asks the LLM to suggets a better name for a variable.
         """
         pass
 
     @abc.abstractmethod
-    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_function_name(self, code_context: str, old_name: str) -> Optional[str]:
         """Suggests a better name for a function or method."""
         pass
 
@@ -51,7 +52,7 @@ class ILLMService(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         """
         Suggests a descriptive constant name for a magic number.
         Returns the suggested constant name in UPPER_SNAKE_CASE or None.
@@ -139,7 +140,7 @@ class GroqAdapter(ILLMService):
             return True 
 
     
-    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python code. The variable `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive variable name based on its usage.
@@ -162,7 +163,7 @@ class GroqAdapter(ILLMService):
             print(f"Error suggesting name: {e}")
             return None
 
-    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_function_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python function/method. The name `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive name that follows Python's snake_case convention.
@@ -183,7 +184,7 @@ class GroqAdapter(ILLMService):
             print(f"Error suggesting function name: {e}")
             return None
 
-    def suggest_class_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_class_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python class. The name `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive name that follows Python's PascalCase convention.
@@ -263,7 +264,7 @@ class GroqAdapter(ILLMService):
             print(f"Error generating type hints: {e}")
             return {"parameters": {}, "return_type": None}
 
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         """
         Suggests a descriptive constant name for a magic number based on its usage context.
         """
@@ -358,7 +359,7 @@ class OpenAIAdapter(ILLMService):
             print(f"Error during docstring evaluation: {e}")
             return True
 
-    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python code. The variable `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive variable name based on its usage.
@@ -380,7 +381,7 @@ class OpenAIAdapter(ILLMService):
             print(f"Error suggesting name: {e}")
             return None
 
-    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_function_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python function/method. The name `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive name that follows Python's snake_case convention.
@@ -401,7 +402,7 @@ class OpenAIAdapter(ILLMService):
             print(f"Error suggesting function name: {e}")
             return None
 
-    def suggest_class_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_class_name(self, code_context: str, old_name: str) -> Optional[str]:
         prompt = f"""
         Analyze the following Python class. The name `{old_name}` has been flagged for a potential naming issue.
         Suggest a better, more descriptive name that follows Python's PascalCase convention.
@@ -483,7 +484,7 @@ class OpenAIAdapter(ILLMService):
             print(f"Error generating type hints: {e}")
             return {"parameters": {}, "return_type": None}
 
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         """Reuse GroqAdapter implementation."""
         return GroqAdapter.suggest_constant_name(self, code_context, magic_number)
 
@@ -516,13 +517,13 @@ class AnthropicAdapter(ILLMService):
     def evaluate_docstring(self, code: str, docstring: str) -> bool:
         return OpenAIAdapter.evaluate_docstring(self, code, docstring)
     
-    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_name(self, code_context, old_name)
     
-    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_function_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_function_name(self, code_context, old_name)
     
-    def suggest_class_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_class_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_class_name(self, code_context, old_name)
     
     def evaluate_name(self, code_context: str, name: str) -> bool:
@@ -531,7 +532,7 @@ class AnthropicAdapter(ILLMService):
     def generate_type_hints(self, code_context: str) -> dict:
         return OpenAIAdapter.generate_type_hints(self, code_context)
     
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         return GroqAdapter.suggest_constant_name(self, code_context, magic_number)
 
 
@@ -561,13 +562,13 @@ class GeminiAdapter(ILLMService):
     def evaluate_docstring(self, code: str, docstring: str) -> bool:
         return OpenAIAdapter.evaluate_docstring(self, code, docstring)
     
-    def suggest_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_name(self, code_context, old_name)
     
-    def suggest_function_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_function_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_function_name(self, code_context, old_name)
     
-    def suggest_class_name(self, code_context: str, old_name: str) -> str | None:
+    def suggest_class_name(self, code_context: str, old_name: str) -> Optional[str]:
         return OpenAIAdapter.suggest_class_name(self, code_context, old_name)
     
     def evaluate_name(self, code_context: str, name: str) -> bool:
@@ -576,5 +577,5 @@ class GeminiAdapter(ILLMService):
     def generate_type_hints(self, code_context: str) -> dict:
         return OpenAIAdapter.generate_type_hints(self, code_context)
     
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         return GroqAdapter.suggest_constant_name(self, code_context, magic_number)

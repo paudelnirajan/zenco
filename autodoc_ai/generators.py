@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from tree_sitter import Node
+from typing import Optional
 from .llm_services import ILLMService, GroqAdapter
 
 class IDocstringGenerator(abc.ABC):
@@ -19,7 +20,7 @@ class IDocstringGenerator(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def suggest_name(self, node: Node, old_name: str) -> str | None:
+    def suggest_name(self, node: Node, old_name: str) -> Optional[str]:
         """Suggests a better name for any given node."""
         pass
 
@@ -29,7 +30,7 @@ class IDocstringGenerator(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         """Suggests a constant name for a magic number."""
         pass
 
@@ -42,13 +43,13 @@ class MockGenerator(IDocstringGenerator):
     def evaluate(self, node: Node, docstring: str) -> bool:
         return len(docstring) > 20
 
-    def suggest_name(self, node: Node, old_name: str) -> str | None:
+    def suggest_name(self, node: Node, old_name: str) -> Optional[str]:
         return f"mock_name_for_{old_name}"
 
     def generate_type_hints(self, node: Node) -> dict:
         return {"parameters": {}, "return_type": None}
 
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         return f"MOCK_CONSTANT_FOR_{magic_number.replace('.', '_').replace('-', 'NEG_')}"
 
 
@@ -73,7 +74,7 @@ class LLMGenerator(IDocstringGenerator):
         code_snippet = node.text.decode('utf8')
         return self.llm_service.evaluate_docstring(code_snippet, docstring)
 
-    def suggest_name(self, node: Node, old_name: str) -> str | None:
+    def suggest_name(self, node: Node, old_name: str) -> Optional[str]:
         code_context = node.text.decode('utf8')
 
         if node.type in ['function_definition', 'function_declaration']:
@@ -87,14 +88,14 @@ class LLMGenerator(IDocstringGenerator):
         code_snippet = node.text.decode('utf8')
         return self.llm_service.generate_type_hints(code_snippet)
 
-    def suggest_constant_name(self, code_context: str, magic_number: str) -> str | None:
+    def suggest_constant_name(self, code_context: str, magic_number: str) -> Optional[str]:
         return self.llm_service.suggest_constant_name(code_context, magic_number)
 
 
 class GeneratorFactory:
     """A factory to create the appropriate docstring generator."""
     @staticmethod
-    def create_generator(strategy: str, style: str = "google", provider: str | None = None, model: str | None = None) -> IDocstringGenerator:
+    def create_generator(strategy: str, style: str = "google", provider: Optional[str] = None, model: Optional[str] = None) -> IDocstringGenerator:
         # Strategy controls mock vs real; provider controls which LLM vendor.
         if strategy == "mock":
             return MockGenerator()
