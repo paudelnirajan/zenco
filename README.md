@@ -1,9 +1,9 @@
-# AutoDoc AI
+# Zenco
 
-[![PyPI version](https://badge.fury.io/py/autodoc-ai-paudelnirajan.svg)](https://badge.fury.io/py/autodoc-ai-paudelnirajan)
+[![PyPI version](https://badge.fury.io/py/zenco.svg)](https://badge.fury.io/py/zenco)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**AutoDoc AI** is a smart command-line developer tool that automates the tedious parts of maintaining high-quality Python code. It leverages Large Language Models (LLMs) to automatically generate docstrings, suggest intelligent refactorings, and integrate seamlessly into a modern development workflow.
+**Zenco** is an AI-powered code analysis and enhancement tool that supports multiple programming languages. It automatically generates docstrings, adds type hints, detects magic numbers, removes dead code, and provides intelligent refactoring suggestions using Large Language Models (LLMs).
 
 This project was built on a foundation of solid Object-Oriented Programming principles and design patterns, including the Visitor, Strategy, Factory, and Adapter patterns.
 
@@ -11,104 +11,117 @@ This project was built on a foundation of solid Object-Oriented Programming prin
 
 ## Core Features
 
-*   **AI-Powered Docstring Generation:** Automatically create high-quality, context-aware docstrings for any function or class that's missing them.
-*   **Intelligent Docstring Correction:** Uses AI to evaluate existing docstrings and replaces poor-quality or placeholder documentation with new, improved versions.
-*   **AI-Powered Refactoring:**
-    *   **Safe Variable Renaming:** Automatically renames poorly named local variables within function scope.
-    *   **Intelligent Naming Suggestions:** Acts as an AI-powered linter, suggesting better names for classes and functions.
-*   **Seamless Git Integration:** Use the `--diff` flag to only process files that have been changed in your current Git branch.
-*   **Codebase-Wide Scanning:** Run `autodoc` on a single file or an entire directory, with automatic `.gitignore` respect.
-*   **Automatic Formatting:** Integrates with the `black` code formatter to ensure all generated and refactored code is perfectly styled.
-*   **Highly Configurable:** Set project-wide defaults for style, AI provider, and behavior in your `pyproject.toml` file.
+### Multi-Language Support
+*   **Python, JavaScript, Java, Go, C++** - Full support across major programming languages
+*   **Tree-sitter powered** - Fast, accurate parsing for all supported languages
+
+### AI-Powered Code Enhancement
+*   **Docstring Generation:** Context-aware docstrings for functions and classes
+*   **Type Hint Addition:** Intelligent type annotations for Python functions
+*   **Magic Number Detection:** Identifies and replaces numeric literals with named constants
+*   **Dead Code Removal:** Detects and removes unused imports, variables, and functions
+*   **Strict Mode:** Advanced cleanup including unused local variables and private methods
+
+### Developer Experience
+*   **Multiple LLM Providers:** Support for Groq, OpenAI, Anthropic, and Google Gemini
+*   **Colorful Terminal Output:** Rich, beautiful command-line interface
+*   **Umbrella Commands:** `--refactor` and `--refactor-strict` for comprehensive code improvement
+*   **Git Integration:** Process only changed files with `--diff`
+*   **Safe Preview Mode:** See changes before applying with dry-run by default
 
 ## Installation
 
-You can install AutoDoc AI directly from PyPI:
+Install Zenco directly from PyPI:
 
 ```bash
-pip install autodoc-ai-paudelnirajan
+pip install zenco
 ```
 
-## First-Time Setup
+## Quick Start
 
-Before you can use the AI features, you need to configure your API key. The easiest way is to use the built-in `init` command in your project's root directory.
-
+1. **Initialize your project:**
 ```bash
-autodoc init
+zenco init
+```
+This interactive wizard helps you configure your preferred AI provider (Groq, OpenAI, Anthropic, or Gemini).
+
+2. **Preview changes on a file:**
+```bash
+zenco run myfile.py --refactor
 ```
 
-This will guide you through creating or updating a `.env` file with your Groq API key and preferred model.
+3. **Apply comprehensive improvements:**
+```bash
+zenco run . --refactor-strict --in-place
+```
 
 ## Configuration
 
-AutoDoc uses a `.env` file for secrets and a `pyproject.toml` file for project-wide settings.
+Zenco uses a `.env` file for secrets and a `pyproject.toml` file for project-wide settings.
 
 ### 1. API Credentials (`.env`)
 
-The `autodoc init` command will create this for you. It should look like this:
+The `zenco init` command will create this for you. Example:
 
 ```env
 GROQ_API_KEY="gsk_YourActualGroqApiKeyHere"
 GROQ_MODEL_NAME="llama3-8b-8192"
+AUTODOC_PROVIDER="groq"
 ```
 
-### 2. Project Defaults (`pyproject.toml`)
+## Usage Examples
 
-You can set default behaviors for your project in `pyproject.toml`. These settings will be used unless they are overridden by a command-line flag.
-
-```toml
-# In your pyproject.toml
-
-[tool.autodoc]
-# Settings for your AutoDoc tool
-strategy = "groq"
-style = "google"           # 'google', 'numpy', or 'rst'
-overwrite_existing = true  # Regenerate poor-quality docstrings
-refactor = true            # Enable AI-powered refactoring
-```
-
-## Usage
-
-AutoDoc is a flexible command-line tool with two main commands: `init` and `run`.
-
-**Get a list of commands:**
+### Basic Commands
 ```bash
-autodoc --help
+# Get help
+zenco --help
+zenco run --help
+
+# Preview changes (dry run)
+zenco run myfile.py --docstrings
+zenco run . --refactor
+
+# Apply changes
+zenco run myfile.py --docstrings --in-place
+zenco run . --refactor-strict --in-place
 ```
 
-**Get detailed help for the `run` command and all its flags:**
+### Feature-Specific Usage
 ```bash
-autodoc run --help
+# Add type hints to Python files
+zenco run . --add-type-hints --in-place
+
+# Fix magic numbers across languages
+zenco run . --fix-magic-numbers --in-place
+
+# Remove dead code (safe mode)
+zenco run . --dead-code --in-place
+
+# Remove dead code (strict mode - includes locals)
+zenco run . --dead-code --dead-code-strict --in-place
+
+# Process only Git-changed files
+zenco run . --diff --refactor --in-place
 ```
 
-**Run on a specific file (dry run, prints to console):**
+### Umbrella Commands
 ```bash
-autodoc run path/to/your/file.py
-```
+# Safe refactor: docstrings + type hints + magic numbers + dead code
+zenco run . --refactor --in-place
 
-**Run on an entire directory and save changes in-place:**
-```bash
-autodoc run src/ --in-place
-```
-
-**Run in "Git mode" to only process changed files (most common use case):**
-```bash
-autodoc run . --diff --in-place
-```
-
-**Enable all AI features to perform a full quality pass:**
-```bash
-autodoc run . --in-place --overwrite-existing --refactor
+# Strict refactor: includes unused local variables and private methods
+zenco run . --refactor-strict --in-place
 ```
 
 ## How It Works
 
-AutoDoc uses a "Surgical Hybrid" architecture that combines the strengths of traditional and modern tooling:
+Zenco uses a "Tree-sitter + AI" architecture for fast, accurate multi-language support:
 
-1.  **Fast Local Analysis:** It uses Python's `ast` (Abstract Syntax Tree) module to rapidly parse code and identify potential issues.
-2.  **Targeted AI Intelligence:** Only when a potential issue is found does it send the small, relevant code snippet to an LLM for intelligent analysis.
-3.  **Precise Code Modification:** The AI's response is used to perform a safe and precise modification of the AST, which is then unparsed back into valid Python code.
-4.  **Toolchain Integration:** Finally, it uses `black` to ensure the final code is perfectly formatted, integrating seamlessly into the existing Python ecosystem.
+1.  **Tree-sitter Parsing:** Fast, incremental parsing for Python, JavaScript, Java, Go, and C++
+2.  **Pattern Detection:** Identifies missing docstrings, magic numbers, unused code, and type annotation opportunities
+3.  **AI Enhancement:** Sends relevant code context to your chosen LLM for intelligent suggestions
+4.  **Safe Transformation:** Applies changes using precise byte-level edits with the CodeTransformer
+5.  **Multi-Provider Support:** Works with Groq, OpenAI, Anthropic, and Google Gemini APIs
 
 ## License
 

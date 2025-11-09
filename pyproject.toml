@@ -3,29 +3,57 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autodoc-ai-paudelnirajan"
-version = "0.1.4"
+name = "zenco"
+version = "1.0.0"
 authors = [
   { name="Nirajan Paudel", email="nirajanpaudel33@gmail.com" },
 ]
-description = "An AI-powered tool to automatically document, refactor, and format Python code."
+description = "AI-powered code analysis and enhancement tool with multi-language support for docstrings, type hints, magic numbers, and dead code detection."
 readme = "README.md"
 requires-python = ">=3.9"
+keywords = ["ai", "code-analysis", "documentation", "refactoring", "type-hints", "dead-code", "python", "javascript", "java", "cpp", "go"]
+license = {text = "MIT"}
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Documentation",
+    "Topic :: Software Development :: Quality Assurance",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "groq",
-    "python-dotenv",
-    "pathspec",
-    "GitPython",
+    "groq>=0.4.0",
+    "openai>=1.0.0",
+    "anthropic>=0.7.0",
+    "google-generativeai>=0.3.0",
+    "python-dotenv>=1.0.0",
+    "pathspec>=0.11.0",
+    "GitPython>=3.1.0",
+    "tree-sitter>=0.20.0",
+    "tree-sitter-python>=0.20.0",
+    "tree-sitter-javascript>=0.20.0",
+    "tree-sitter-java>=0.20.0",
+    "tree-sitter-go>=0.20.0",
+    "tree-sitter-cpp>=0.20.0",
+    "rich>=13.0.0",
+    "colorama>=0.4.6",
     "tomli; python_version < '3.11'",
-    "black",
 ]
 
+[project.urls]
+Homepage = "https://github.com/paudelnirajan/zenco"
+Repository = "https://github.com/paudelnirajan/zenco"
+Documentation = "https://github.com/paudelnirajan/zenco#readme"
+"Bug Tracker" = "https://github.com/paudelnirajan/zenco/issues"
+
 [project.scripts]
+zenco = "autodoc_ai.cli:main"
 autodoc = "autodoc_ai.cli:main"
 
 # --- Tool's Configuration ---
