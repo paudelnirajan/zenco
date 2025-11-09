@@ -78,7 +78,7 @@ def init_config():
     print("  3. Anthropic   - Claude 3.5 Sonnet (requires paid account)")
     print("  4. Google      - Gemini Pro/Flash (free tier available)")
     
-    provider_choice = input("\n👉 Select your LLM provider (1-4) [default: 1]: ").strip() or "1"
+    provider_choice = input("\n[SELECT] Select your LLM provider (1-4) [default: 1]: ").strip() or "1"
     
     provider_map = {
         "1": ("groq", "GROQ_API_KEY", "GROQ_MODEL_NAME", "llama-3.3-70b-versatile"),
@@ -212,25 +212,32 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         print(f"Warning: Queries for `{lang}` not fully defined. Skipping.")
         return
 
-    # Use Query API to execute queries
-    all_func_query_obj = Query(language, all_func_query)
-    documented_func_query_obj = Query(language, documented_funcs_query)
+    # Use manual tree traversal (more reliable than Query API)
+    def find_nodes_by_type(node, target_type):
+        results = []
+        if node.type == target_type:
+            results.append(node)
+        for child in node.children:
+            results.extend(find_nodes_by_type(child, target_type))
+        return results
     
-    # Get all functions (matches returns (pattern_index, {capture_name: [nodes]}) tuples)
-    all_functions = set()
-    for _, captures in all_func_query_obj.matches(tree.root_node):
-        for node in captures.get('func', []):
-            all_functions.add(node)
+    # Get all functions based on language
+    if lang == 'python':
+        all_functions = set(find_nodes_by_type(tree.root_node, 'function_definition'))
+    elif lang == 'javascript':
+        all_functions = set(find_nodes_by_type(tree.root_node, 'function_declaration'))
+    elif lang == 'java':
+        all_functions = set(find_nodes_by_type(tree.root_node, 'method_declaration'))
+    elif lang == 'go':
+        all_functions = set(find_nodes_by_type(tree.root_node, 'function_declaration'))
+    elif lang == 'cpp':
+        all_functions = set(find_nodes_by_type(tree.root_node, 'function_definition'))
+    else:
+        all_functions = set()
     
+    # Find documented functions (functions with docstrings)
     documented_nodes = {}
-    for _, captures in documented_func_query_obj.matches(tree.root_node):
-        func_nodes = captures.get('func', [])
-        doc_nodes = captures.get('docstring', [])
-        for i, func_node in enumerate(func_nodes):
-            if i < len(doc_nodes):
-                documented_nodes[func_node] = doc_nodes[i]
-    
-    documented_functions = set(documented_nodes.keys())
+    documented_functions = set()
     
     # Also manually check for docstrings as a fallback (in case query doesn't match)
     # A function has a docstring if its first statement is a string literal
@@ -409,255 +416,256 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
 
     # Process type hints if enabled (Python only for now)
     if add_type_hints and lang == 'python':
-        typed_funcs_query = queries.get("functions_with_type_hints")
-        
         # Track which typing imports are needed
         typing_imports_needed = set()
         
-        if typed_funcs_query:
-            typed_func_query_obj = Query(language, typed_funcs_query)
-            functions_with_hints = set()
+        # Find functions with type hints (have return_type field)
+        functions_with_hints = set()
+        for func_node in all_functions:
+            if func_node.child_by_field_name('return_type'):
+                functions_with_hints.add(func_node)
+        
+        # Find functions without type hints
+        functions_without_hints = all_functions - functions_with_hints
+        
+        for func_node in functions_without_hints:
+            name_node = func_node.child_by_field_name('name')
+            if not name_node:
+                continue
             
-            for _, captures in typed_func_query_obj.matches(tree.root_node):
-                for node in captures.get('func', []):
-                    functions_with_hints.add(node)
+            func_name = name_node.text.decode('utf8')
             
-            # Find functions without type hints
-            functions_without_hints = all_functions - functions_with_hints
+            # Skip special methods like __init__, __str__, etc.
+            if func_name.startswith('__') and func_name.endswith('__'):
+                continue
             
-            for func_node in functions_without_hints:
-                name_node = func_node.child_by_field_name('name')
-                if not name_node:
+            line_num = name_node.start_point[0] + 1
+            print(f"  [TYPE] Line {line_num}: Adding type hints to `{func_name}()`", flush=True)
+            
+            try:
+                type_hints = generator.generate_type_hints(func_node)
+                
+                if not type_hints or (not type_hints.get('parameters') and not type_hints.get('return_type')):
+                    print(f"     [WARN] Could not infer types for `{func_name}()`")
                     continue
                 
-                func_name = name_node.text.decode('utf8')
-                
-                # Skip special methods like __init__, __str__, etc.
-                if func_name.startswith('__') and func_name.endswith('__'):
-                    continue
-                
-                line_num = name_node.start_point[0] + 1
-                print(f"  [TYPE] Line {line_num}: Adding type hints to `{func_name}()`", flush=True)
-                
-                try:
-                    type_hints = generator.generate_type_hints(func_node)
-                    
-                    if not type_hints or (not type_hints.get('parameters') and not type_hints.get('return_type')):
-                        print(f"     [WARN] Could not infer types for `{func_name}()`")
-                        continue
-                    
-                    # Build the new function signature with type hints
-                    source_text = source_bytes.decode('utf8')
-                    
-                    # Get the parameters node
-                    params_node = func_node.child_by_field_name('parameters')
-                    if not params_node:
-                        continue
-                    
-                    # Build new parameter list with type hints
-                    new_params = []
-                    for param_child in params_node.children:
-                        if param_child.type == 'identifier':
-                            param_name = param_child.text.decode('utf8')
-                            type_hint = type_hints.get('parameters', {}).get(param_name)
-                            
-                            if type_hint:
-                                new_params.append(f"{param_name}: {type_hint}")
-                            else:
-                                new_params.append(param_name)
-                        elif param_child.type in ['(', ')', ',']:
-                            # Keep delimiters as-is
-                            continue
-                        elif param_child.type == 'default_parameter':
-                            # Handle parameters with default values
-                            param_id = param_child.child_by_field_name('name')
-                            param_default = param_child.child_by_field_name('value')
-                            
-                            if param_id:
-                                param_name = param_id.text.decode('utf8')
-                                type_hint = type_hints.get('parameters', {}).get(param_name)
-                                default_val = param_default.text.decode('utf8') if param_default else ''
-                                
-                                if type_hint:
-                                    new_params.append(f"{param_name}: {type_hint} = {default_val}")
-                                else:
-                                    new_params.append(f"{param_name} = {default_val}")
-                        elif param_child.type == 'typed_parameter':
-                            # Already has type hint, keep as-is
-                            new_params.append(param_child.text.decode('utf8'))
-                        elif param_child.type == 'typed_default_parameter':
-                            # Already has type hint with default, keep as-is
-                            new_params.append(param_child.text.decode('utf8'))
-                    
-                    # Build the new function definition line
-                    return_type = type_hints.get('return_type')
-                    params_str = ', '.join(new_params)
-                    
-                    # Find the colon that ends the function signature
-                    colon_found = False
-                    colon_byte = None
-                    for child in func_node.children:
-                        if child.type == ':':
-                            colon_found = True
-                            colon_byte = child.start_byte
-                            break
-                    
-                    if not colon_found:
-                        continue
-                    
-                    # Build the replacement text for the signature
-                    if return_type:
-                        new_signature = f"def {func_name}({params_str}) -> {return_type}:"
-                        # Check if return type needs typing imports
-                        for typing_type in ['List', 'Dict', 'Tuple', 'Set', 'Optional', 'Union', 'Any', 'Callable']:
-                            if typing_type in return_type:
-                                typing_imports_needed.add(typing_type)
-                    else:
-                        new_signature = f"def {func_name}({params_str}):"
-                    
-                    # Check if parameter types need typing imports
-                    for param_type in type_hints.get('parameters', {}).values():
-                        if param_type:
-                            for typing_type in ['List', 'Dict', 'Tuple', 'Set', 'Optional', 'Union', 'Any', 'Callable']:
-                                if typing_type in param_type:
-                                    typing_imports_needed.add(typing_type)
-                    
-                    # Find the start of 'def' keyword
-                    def_start = func_node.start_byte
-                    
-                    # Replace from 'def' to ':' (inclusive)
-                    transformer.add_change(
-                        start_byte=def_start,
-                        end_byte=colon_byte + 1,
-                        new_text=new_signature
-                    )
-                    
-                except Exception as e:
-                    print(f"  ERROR adding type hints to `{func_name}`: {e}", flush=True)
-                    import traceback
-                    traceback.print_exc()
-                    continue
-            
-            # Add typing import if needed
-            if typing_imports_needed:
+                # Build the new function signature with type hints
                 source_text = source_bytes.decode('utf8')
                 
-                # Check if typing import already exists
-                has_typing_import = 'from typing import' in source_text or 'import typing' in source_text
+                # Get the parameters node
+                params_node = func_node.child_by_field_name('parameters')
+                if not params_node:
+                    continue
                 
-                if not has_typing_import:
-                    # Add the import at the beginning of the file
-                    imports_str = ', '.join(sorted(typing_imports_needed))
-                    import_statement = f"from typing import {imports_str}\n\n"
-                    
-                    # Find the position to insert (after any existing imports or at the start)
-                    # For simplicity, we'll insert at the very beginning
-                    transformer.add_change(
-                        start_byte=0,
-                        end_byte=0,
-                        new_text=import_statement
-                    )
-                    print(f"  📦 Added typing import: {imports_str}")
+                # Build new parameter list with type hints
+                new_params = []
+                for param_child in params_node.children:
+                    if param_child.type == 'identifier':
+                        param_name = param_child.text.decode('utf8')
+                        type_hint = type_hints.get('parameters', {}).get(param_name)
+                        
+                        if type_hint:
+                            new_params.append(f"{param_name}: {type_hint}")
+                        else:
+                            new_params.append(param_name)
+                    elif param_child.type in ['(', ')', ',']:
+                        # Keep delimiters as-is
+                        continue
+                    elif param_child.type == 'default_parameter':
+                        # Handle parameters with default values
+                        param_id = param_child.child_by_field_name('name')
+                        param_default = param_child.child_by_field_name('value')
+                        
+                        if param_id:
+                            param_name = param_id.text.decode('utf8')
+                            type_hint = type_hints.get('parameters', {}).get(param_name)
+                            default_val = param_default.text.decode('utf8') if param_default else ''
+                            
+                            if type_hint:
+                                new_params.append(f"{param_name}: {type_hint} = {default_val}")
+                            else:
+                                new_params.append(f"{param_name} = {default_val}")
+                    elif param_child.type == 'typed_parameter':
+                        # Already has type hint, keep as-is
+                        new_params.append(param_child.text.decode('utf8'))
+                    elif param_child.type == 'typed_default_parameter':
+                        # Already has type hint with default, keep as-is
+                        new_params.append(param_child.text.decode('utf8'))
+                
+                # Build the new function definition line
+                return_type = type_hints.get('return_type')
+                params_str = ', '.join(new_params)
+                
+                # Find the colon that ends the function signature
+                colon_found = False
+                colon_byte = None
+                for child in func_node.children:
+                    if child.type == ':':
+                        colon_found = True
+                        colon_byte = child.start_byte
+                        break
+                
+                if not colon_found:
+                    continue
+                
+                # Build the replacement text for the signature
+                if return_type:
+                    new_signature = f"def {func_name}({params_str}) -> {return_type}:"
+                    # Check if return type needs typing imports
+                    for typing_type in ['List', 'Dict', 'Tuple', 'Set', 'Optional', 'Union', 'Any', 'Callable']:
+                        if typing_type in return_type:
+                            typing_imports_needed.add(typing_type)
+                else:
+                    new_signature = f"def {func_name}({params_str}):"
+                
+                # Check if parameter types need typing imports
+                for param_type in type_hints.get('parameters', {}).values():
+                    if param_type:
+                        for typing_type in ['List', 'Dict', 'Tuple', 'Set', 'Optional', 'Union', 'Any', 'Callable']:
+                            if typing_type in param_type:
+                                typing_imports_needed.add(typing_type)
+                
+                # Find the start of 'def' keyword
+                def_start = func_node.start_byte
+                
+                # Replace from 'def' to ':' (inclusive)
+                transformer.add_change(
+                    start_byte=def_start,
+                    end_byte=colon_byte + 1,
+                    new_text=new_signature
+                )
+                
+            except Exception as e:
+                print(f"  ERROR adding type hints to `{func_name}`: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                continue
+            
+        # Add typing import if needed
+        if typing_imports_needed:
+            source_text = source_bytes.decode('utf8')
+            
+            # Check if typing import already exists
+            has_typing_import = 'from typing import' in source_text or 'import typing' in source_text
+            
+            if not has_typing_import:
+                # Add the import at the beginning of the file
+                imports_str = ', '.join(sorted(typing_imports_needed))
+                import_statement = f"from typing import {imports_str}\n\n"
+                
+                # Find the position to insert (after any existing imports or at the start)
+                # For simplicity, we'll insert at the very beginning
+                transformer.add_change(
+                    start_byte=0,
+                    end_byte=0,
+                    new_text=import_statement
+                )
+                print(f"  [ADD] Added typing import: {imports_str}")
 
     # Process magic numbers if enabled
     if fix_magic_numbers and lang == 'python':
-        numeric_query = queries.get("numeric_literals")
+        # Collect all magic numbers with their context
+        magic_numbers = {}  # {value: [(node, function_context), ...]}
         
-        if numeric_query:
-            numeric_query_obj = Query(language, numeric_query)
+        # Find numeric literals manually
+        def find_numeric_literals(node):
+            results = []
+            if node.type in ['integer', 'float']:
+                results.append(node)
+            for child in node.children:
+                results.extend(find_numeric_literals(child))
+            return results
+        
+        numeric_nodes = find_numeric_literals(tree.root_node)
+        
+        for node in numeric_nodes:
+            value = node.text.decode('utf8')
             
-            # Collect all magic numbers with their context
-            magic_numbers = {}  # {value: [(node, function_context), ...]}
+            # Skip acceptable numbers
+            if value in ['0', '1', '-1', '2', 'True', 'False']:
+                continue
             
-            for _, captures in numeric_query_obj.matches(tree.root_node):
-                for node in captures.get('number', []):
-                    value = node.text.decode('utf8')
-                    
-                    # Skip acceptable numbers
-                    if value in ['0', '1', '-1', '2', 'True', 'False']:
-                        continue
-                    
-                    # Skip numbers in default parameter values (already named)
-                    parent = node.parent
-                    if parent and parent.type == 'default_parameter':
-                        continue
-                    
-                    # Find the containing function for context
-                    current = node.parent
-                    function_node = None
-                    while current:
-                        if current.type == 'function_definition':
-                            function_node = current
-                            break
-                        current = current.parent
-                    
-                    if function_node:
-                        if value not in magic_numbers:
-                            magic_numbers[value] = []
-                        magic_numbers[value].append((node, function_node))
+            # Skip numbers in default parameter values (already named)
+            parent = node.parent
+            if parent and parent.type == 'default_parameter':
+                continue
             
-            # Process each unique magic number
-            constants_to_add = []  # [(constant_name, value), ...]
-            replacements = []  # [(node, constant_name), ...]
+            # Find the containing function for context
+            current = node.parent
+            function_node = None
+            while current:
+                if current.type == 'function_definition':
+                    function_node = current
+                    break
+                current = current.parent
             
-            for value, occurrences in magic_numbers.items():
-                # Use the first occurrence's function for context
-                first_node, first_function = occurrences[0]
-                function_code = first_function.text.decode('utf8')
-                
-                line_num = first_node.start_point[0] + 1
-                print(f"  [MAGIC] Line {line_num}: Found magic number `{value}`", flush=True)
-                
-                # Get LLM suggestion for constant name
-                constant_name = generator.suggest_constant_name(function_code, value)
-                
-                if constant_name:
-                    print(f"     → Suggested constant: {constant_name}")
-                    constants_to_add.append((constant_name, value))
-                    
-                    # Mark all occurrences for replacement
-                    for node, _ in occurrences:
-                        replacements.append((node, constant_name))
-                else:
-                    print(f"     [WARN] Could not generate meaningful name, skipping")
+            if function_node:
+                if value not in magic_numbers:
+                    magic_numbers[value] = []
+                magic_numbers[value].append((node, function_node))
+        
+        # Process each unique magic number
+        constants_to_add = []  # [(constant_name, value), ...]
+        replacements = []  # [(node, constant_name), ...]
+        
+        for value, occurrences in magic_numbers.items():
+            # Use the first occurrence's function for context
+            first_node, first_function = occurrences[0]
+            function_code = first_function.text.decode('utf8')
             
-            # Apply replacements (in reverse order to maintain byte offsets)
-            replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
-            for node, constant_name in replacements:
-                transformer.add_change(
-                    start_byte=node.start_byte,
-                    end_byte=node.end_byte,
-                    new_text=constant_name
-                )
+            line_num = first_node.start_point[0] + 1
+            print(f"  [MAGIC] Line {line_num}: Found magic number `{value}`", flush=True)
             
-            # Add constant definitions at the top of the file
-            if constants_to_add:
-                source_text = source_bytes.decode('utf8')
+            # Get LLM suggestion for constant name
+            constant_name = generator.suggest_constant_name(function_code, value)
+            
+            if constant_name:
+                print(f"     → Suggested constant: {constant_name}")
+                constants_to_add.append((constant_name, value))
                 
-                # Find where to insert constants (after imports, before first function/class)
-                # For simplicity, insert after any existing imports or at the start
-                insert_position = 0
-                
-                # Try to find the end of imports
-                lines = source_text.split('\n')
-                for i, line in enumerate(lines):
-                    stripped = line.strip()
-                    if stripped and not stripped.startswith('#') and not stripped.startswith('import') and not stripped.startswith('from'):
-                        # Found first non-import, non-comment line
-                        insert_position = sum(len(l) + 1 for l in lines[:i])
-                        break
-                
-                # Build constant definitions
-                constants_text = '\n'.join(f"{name} = {value}" for name, value in constants_to_add)
-                constants_text += '\n\n'
-                
-                transformer.add_change(
-                    start_byte=insert_position,
-                    end_byte=insert_position,
-                    new_text=constants_text
-                )
-                
-                print(f"  📦 Added {len(constants_to_add)} constant(s) at module level")
+                # Mark all occurrences for replacement
+                for node, _ in occurrences:
+                    replacements.append((node, constant_name))
+            else:
+                print(f"     [WARN] Could not generate meaningful name, skipping")
+        
+        # Apply replacements (in reverse order to maintain byte offsets)
+        replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
+        for node, constant_name in replacements:
+            transformer.add_change(
+                start_byte=node.start_byte,
+                end_byte=node.end_byte,
+                new_text=constant_name
+            )
+        
+        # Add constant definitions at the top of the file
+        if constants_to_add:
+            source_text = source_bytes.decode('utf8')
+            
+            # Find where to insert constants (after imports, before first function/class)
+            # For simplicity, insert after any existing imports or at the start
+            insert_position = 0
+            
+            # Try to find the end of imports
+            lines = source_text.split('\n')
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#') and not stripped.startswith('import') and not stripped.startswith('from'):
+                    # Found first non-import, non-comment line
+                    insert_position = sum(len(l) + 1 for l in lines[:i])
+                    break
+            
+            # Build constant definitions
+            constants_text = '\n'.join(f"{name} = {value}" for name, value in constants_to_add)
+            constants_text += '\n\n'
+            
+            transformer.add_change(
+                start_byte=insert_position,
+                end_byte=insert_position,
+                new_text=constants_text
+            )
+            
+            print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
 
     elif fix_magic_numbers and lang == 'javascript':
         numeric_query = queries.get("numeric_literals")

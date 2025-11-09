@@ -1,6 +1,5 @@
 import abc
 import os
-import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from tree_sitter import Node
@@ -112,8 +111,7 @@ class GeneratorFactory:
         if provider == "groq":
             api_key = os.getenv("GROQ_API_KEY")
             if not api_key:
-                print("\nError: Groq API key not found.", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError("Groq API key not found. Run 'zenco init' to configure your API key, or use '--strategy mock' for testing.")
             model_name = model or os.getenv("GROQ_MODEL_NAME", "llama3-8b-8192")
             groq_adapter = GroqAdapter(api_key=api_key, model=model_name)
             return LLMGenerator(llm_service=groq_adapter, style=style)
@@ -122,8 +120,7 @@ class GeneratorFactory:
             from .llm_services import OpenAIAdapter  # lazy import
             api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
-                print("\nError: OpenAI API key not found.", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError("OpenAI API key not found. Run 'zenco init' to configure your API key, or use '--strategy mock' for testing.")
             model_name = model or os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
             adapter = OpenAIAdapter(api_key=api_key, model=model_name)
             return LLMGenerator(llm_service=adapter, style=style)
@@ -132,8 +129,7 @@ class GeneratorFactory:
             from .llm_services import AnthropicAdapter  # lazy import
             api_key = os.getenv("ANTHROPIC_API_KEY")
             if not api_key:
-                print("\nError: Anthropic API key not found.", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError("Anthropic API key not found. Run 'zenco init' to configure your API key, or use '--strategy mock' for testing.")
             model_name = model or os.getenv("ANTHROPIC_MODEL_NAME", "claude-3-5-sonnet-latest")
             adapter = AnthropicAdapter(api_key=api_key, model=model_name)
             return LLMGenerator(llm_service=adapter, style=style)
@@ -142,8 +138,7 @@ class GeneratorFactory:
             from .llm_services import GeminiAdapter  # lazy import
             api_key = os.getenv("GEMINI_API_KEY")
             if not api_key:
-                print("\nError: Gemini API key not found.", file=sys.stderr)
-                sys.exit(1)
+                raise ValueError("Gemini API key not found. Run 'zenco init' to configure your API key, or use '--strategy mock' for testing.")
             model_name = model or os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-pro")
             adapter = GeminiAdapter(api_key=api_key, model=model_name)
             return LLMGenerator(llm_service=adapter, style=style)

@@ -43,7 +43,7 @@ jobs:
     
     - name: Test on example files (dry-run)
       run: |
-        zenco run examples/ --refactor || echo "Examples test completed"
+        zenco run examples/ --refactor --strategy mock || echo "Examples test completed"
     
     - name: Run pytest (if tests exist)
       run: |

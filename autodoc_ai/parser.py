@@ -33,80 +33,49 @@ def get_language_queries(language_name: str) -> dict:
 
     if language_name == 'python':
         return {
-            "all_functions": Query(
-                language,
-                "(function_definition) @func"
-            ),
-            "documented_function": Query(
-                language,
-                """
+            "all_functions": "(function_definition) @func",
+            "documented_function": """
                 (function_definition
                   body: (block (expression_statement (string) @docstring))
                 ) @func
-                """
-            ),
-            "functions_with_type_hints": Query(
-                language,
-                """
+                """,
+            "functions_with_type_hints": """
                 (function_definition
                   return_type: (_)
                 ) @func
-                """
-            ),
-            "numeric_literals": Query(
-                language,
-                """
+                """,
+            "numeric_literals": """
                 [
                   (integer) @number
                   (float) @number
                 ]
                 """
-            ),
         }
     if language_name == 'javascript':
         return {
-            "all_functions": Query(
-                language,
-                "(function_declaration) @func"
-            ),
-            "documented_function": Query(
-                language,
-                """
+            "all_functions": "(function_declaration) @func",
+            "documented_function": """
                 (
                   (comment) @docstring
                   .
                   (function_declaration) @func
                 )
                 (#match? @docstring "^/\\\\*\\\\*")
-                """
-            ),
-            "numeric_literals": Query(
-                language,
-                """
-                (number) @number
-                """
-            ),
+                """,
+            "numeric_literals": "(number) @number"
         }
 
     if language_name == 'java':
         return {
-            "all_functions": Query(
-                language,
-                "(method_declaration) @func"
-            ),
-            "documented_function": Query(
-                language,
-                """
+            "all_functions": "(method_declaration) @func",
+            "documented_function": """
                 (
                     (block_comment)+ @docstring
                     .
                     (method_declaration) @func
                 )
-                """
-            ),
-            "numeric_literals": Query(
-                language,
-                """
+                """,
+            "numeric_literals": """
                 [
                   (decimal_integer_literal) @number
                   (decimal_floating_point_literal) @number
@@ -115,58 +84,37 @@ def get_language_queries(language_name: str) -> dict:
                   (binary_integer_literal) @number
                 ]
                 """
-            ),
         }
 
     if language_name == 'go':
         return {
-            "all_functions": Query(
-                language,
-                "(function_declaration) @func"
-            ),
-            "documented_function": Query(
-                language,
-                """
+            "all_functions": "(function_declaration) @func",
+            "documented_function": """
                 (
                   (comment) @doc_comment
                   .
                   (function_declaration) @func
                 )
-                """
-            ),
-            "numeric_literals": Query(
-                language,
-                """
+                """,
+            "numeric_literals": """
                 [
                   (int_lit) @number
                   (float_lit) @number
                 ]
                 """
-            ),
         }
 
     if language_name == 'cpp':
         return {
-            "all_functions": Query(
-                language,
-                "(function_definition) @func"
-            ),
-            "documented_function": Query(
-                language,
-                """
+            "all_functions": "(function_definition) @func",
+            "documented_function": """
                 (
                   (comment) @docstring
                   .
                   (function_definition) @func
                 )
-                """
-            ),
-            "numeric_literals": Query(
-                language,
-                """
-                (number_literal) @number
-                """
-            ),
+                """,
+            "numeric_literals": "(number_literal) @number"
         }
         
     return {}
