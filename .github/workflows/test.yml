@@ -32,9 +32,9 @@ jobs:
     
     - name: Run basic import tests
       run: |
-        python -c "from autodoc_ai.cli import main; print('✅ CLI imports successfully')"
-        python -c "from autodoc_ai.generators import GeneratorFactory; print('✅ Generators import successfully')"
-        python -c "from autodoc_ai.parser import get_language_parser; print('✅ Parser imports successfully')"
+        python -c "from autodoc_ai.cli import main; print('[OK] CLI imports successfully')"
+        python -c "from autodoc_ai.generators import GeneratorFactory; print('[OK] Generators import successfully')"
+        python -c "from autodoc_ai.parser import get_language_parser; print('[OK] Parser imports successfully')"
     
     - name: Test CLI help
       run: |

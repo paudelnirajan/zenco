@@ -101,7 +101,7 @@ def init_config():
     api_key = input(f"\n🔑 Enter your {provider_name.upper()} API key: ").strip()
     
     if not api_key:
-        print("\n❌ API key is required. Configuration cancelled.")
+        print("\n[ERROR] API key is required. Configuration cancelled.")
         return
     
     model_name = input(f"🤖 Enter model name [default: {default_model}]: ").strip() or default_model
@@ -144,7 +144,7 @@ def init_config():
                 print(f"  ✓ Added {key}")
     
     print(f"\n{'='*70}")
-    print(f"  ✅ Configuration Complete!")
+    print(f"  [OK] Configuration Complete!")
     print(f"{'='*70}")
     print(f"\n📊 Your Settings:")
     print(f"  • Provider: {provider_name.upper()}")
@@ -879,7 +879,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         try:
             tree_ast = ast.parse(source_text)
         except Exception as e:
-            print(f"  ❌ AST parse error for dead code detection: {e}")
+            print(f"  [ERROR] AST parse error for dead code detection: {e}")
             tree_ast = None
         if tree_ast:
             # Collect imports
@@ -1635,9 +1635,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             try:
                 with open(filepath, 'wb') as f:
                     f.write(new_code)
-                print("  ✅ File updated successfully!")
+                print("  [OK] File updated successfully!")
             except IOError as e:
-                print(f"  ❌ Error writing to file: {e}")
+                print(f"  [ERROR] Error writing to file: {e}")
         else:
             print("\n  ℹ️  No changes needed for this file.")
     else:
@@ -1707,7 +1707,7 @@ def run_autodoc(args):
         print("Scanning for modified files...")
         source_files = get_git_changed_files()
         if source_files is None: 
-            print("❌ Error: Not a git repository or no changes found.")
+            print("[ERROR] Error: Not a git repository or no changes found.")
             sys.exit(1)
     else:
         print(f"📂 Target: {args.path}\n")
@@ -1740,8 +1740,8 @@ def run_autodoc(args):
             getattr(args, 'model', None),
         )
     except ValueError as e:
-        print(f"❌ Error: {e}")
-        print(f"💡 Tip: Run 'autodoc init' to configure your provider.")
+        print(f"[ERROR] Error: {e}")
+        print(f"[TIP] Tip: Run 'autodoc init' to configure your provider.")
         sys.exit(1)
 
     print(f"{'─'*70}\n")
@@ -1763,7 +1763,7 @@ def run_autodoc(args):
     
     # Summary
     print(f"{'='*70}")
-    print(f"  ✅ Processing Complete!")
+    print(f"  [OK] Processing Complete!")
     print(f"{'='*70}")
     print(f"\n📊 Summary:")
     print(f"  • Files processed: {len(source_files)}")
