@@ -668,225 +668,245 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
 
     elif fix_magic_numbers and lang == 'javascript':
-        numeric_query = queries.get("numeric_literals")
-        if numeric_query:
-            numeric_query_obj = Query(language, numeric_query)
-            magic_numbers = {}
-            for _, captures in numeric_query_obj.matches(tree.root_node):
-                for node in captures.get('number', []):
-                    value = node.text.decode('utf8')
-                    if value in ['0', '1', '-1', '2']:
-                        continue
-                    # Find containing function if available for context
-                    current = node.parent
-                    func_node = None
-                    while current:
-                        if current.type in ['function_declaration', 'method_definition']:
-                            func_node = current
-                            break
-                        current = current.parent
-                    if value not in magic_numbers:
-                        magic_numbers[value] = []
-                    magic_numbers[value].append((node, func_node))
-
-            constants_to_add = []
-            replacements = []
-            for value, occ in magic_numbers.items():
-                first_node, func_node = occ[0]
-                context_code = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
-                const_name = generator.suggest_constant_name(context_code, value) or None
-                if const_name:
-                    print(f"     → Suggested constant: {const_name}")
-                    constants_to_add.append((const_name, value))
-                    for node, _ in occ:
-                        replacements.append((node, const_name))
-                else:
-                    print("     [WARN]  Could not generate meaningful name, skipping")
-
-            replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
-            for node, const_name in replacements:
-                transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
-
-            if constants_to_add:
-                # Insert after import/require lines
-                text = source_bytes.decode('utf8')
-                lines = text.split('\n')
-                insert_pos = 0
-                for i, line in enumerate(lines):
-                    s = line.strip()
-                    if s and not (s.startswith('import ') or s.startswith('from ') or s.startswith('require(') or s.startswith('//')):
-                        insert_pos = sum(len(l) + 1 for l in lines[:i])
-                        break
-                consts_text = '\n'.join(f"const {n} = {v};" for n, v in constants_to_add) + '\n\n'
-                transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
-                print(f"  📦 Added {len(constants_to_add)} constant(s) at module level")
+        # Find numeric literals manually
+        def find_js_numbers(node):
+            results = []
+            if node.type == 'number':
+                results.append(node)
+            for child in node.children:
+                results.extend(find_js_numbers(child))
+            return results
+        
+        magic_numbers = {}
+        for node in find_js_numbers(tree.root_node):
+            value = node.text.decode('utf8')
+            if value in ['0', '1', '-1', '2']:
+                continue
+            # Find containing function if available for context
+            current = node.parent
+            func_node = None
+            while current:
+                if current.type in ['function_declaration', 'method_definition']:
+                    func_node = current
+                    break
+                current = current.parent
+            if value not in magic_numbers:
+                magic_numbers[value] = []
+            magic_numbers[value].append((node, func_node))
+        
+        constants_to_add = []
+        replacements = []
+        for value, occ in magic_numbers.items():
+            first_node, func_node = occ[0]
+            context_code = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
+            print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+            const_name = generator.suggest_constant_name(context_code, value) or None
+            if const_name:
+                print(f"     → Suggested constant: {const_name}")
+                constants_to_add.append((const_name, value))
+                for node, _ in occ:
+                    replacements.append((node, const_name))
+            else:
+                print("     [WARN]  Could not generate meaningful name, skipping")
+        
+        replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
+        for node, const_name in replacements:
+            transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
+        
+        if constants_to_add:
+            # Insert after import/require lines
+            text = source_bytes.decode('utf8')
+            lines = text.split('\n')
+            insert_pos = 0
+            for i, line in enumerate(lines):
+                s = line.strip()
+                if s and not (s.startswith('import ') or s.startswith('from ') or s.startswith('require(') or s.startswith('//')):
+                    insert_pos = sum(len(l) + 1 for l in lines[:i])
+                    break
+            consts_text = '\n'.join(f"const {n} = {v};" for n, v in constants_to_add) + '\n\n'
+            transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
+            print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
 
     elif fix_magic_numbers and lang == 'java':
-        numeric_query = queries.get("numeric_literals")
-        if numeric_query:
-            numeric_query_obj = Query(language, numeric_query)
-            magic_numbers = {}
-            for _, captures in numeric_query_obj.matches(tree.root_node):
-                for node in captures.get('number', []):
-                    value = node.text.decode('utf8')
-                    if value in ['0', '1', '-1', '2']:
-                        continue
-                    # Ascend to method and class
-                    current = node.parent
-                    method_node = None
-                    class_node = None
-                    while current:
-                        if current.type == 'method_declaration' and not method_node:
-                            method_node = current
-                        if current.type in ['class_declaration', 'class_declaration_simple', 'normal_class_declaration']:
-                            class_node = current
-                            break
-                        current = current.parent
-                    if class_node is None:
-                        continue
-                    if value not in magic_numbers:
-                        magic_numbers[value] = []
-                    magic_numbers[value].append((node, method_node, class_node))
-
-            constants_to_add_by_class = {}  # class_node -> [(name, value, type_hint)]
-            replacements = []
-            for value, occ in magic_numbers.items():
-                first_node, method_node, class_node = occ[0]
-                ctx = (method_node.text.decode('utf8') if method_node else class_node.text.decode('utf8'))
-                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
-                const_name = generator.suggest_constant_name(ctx, value)
-                if const_name:
-                    print(f"     → Suggested constant: {const_name}")
-                    # Determine type: simple heuristic
-                    type_kw = 'double' if ('.' in value or 'e' in value.lower()) else 'int'
-                    constants_list = constants_to_add_by_class.setdefault(class_node, [])
-                    constants_list.append((const_name, value, type_kw))
-                    for node, _, _ in occ:
-                        replacements.append((node, const_name))
-                else:
-                    print("     [WARN]  Could not generate meaningful name, skipping")
-
-            replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
-            for node, const_name in replacements:
-                transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
-
-            # Insert inside each class, after opening brace
-            for class_node, consts in constants_to_add_by_class.items():
-                class_start = class_node.start_byte
-                class_text = class_node.text.decode('utf8')
-                # Find the first '{' relative position
-                brace_rel = class_text.find('{')
-                if brace_rel == -1:
-                    continue
-                insert_pos = class_start + brace_rel + 1
-                const_lines = '\n'.join(f"    private static final {t} {n} = {v};" for n, v, t in consts) + '\n'
-                transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text='\n' + const_lines)
-                print(f"  [ADD] Added {len(consts)} constant(s) in class")
+        # Find numeric literals manually
+        def find_java_numbers(node):
+            results = []
+            if 'literal' in node.type and any(t in node.type for t in ['integer', 'floating', 'decimal', 'hex', 'octal', 'binary']):
+                results.append(node)
+            for child in node.children:
+                results.extend(find_java_numbers(child))
+            return results
+        
+        magic_numbers = {}
+        for node in find_java_numbers(tree.root_node):
+            value = node.text.decode('utf8')
+            if value in ['0', '1', '-1', '2']:
+                continue
+            # Ascend to method and class
+            current = node.parent
+            method_node = None
+            class_node = None
+            while current:
+                if current.type == 'method_declaration' and not method_node:
+                    method_node = current
+                if current.type in ['class_declaration', 'class_declaration_simple', 'normal_class_declaration']:
+                    class_node = current
+                    break
+                current = current.parent
+            if class_node is None:
+                continue
+            if value not in magic_numbers:
+                magic_numbers[value] = []
+            magic_numbers[value].append((node, method_node, class_node))
+        
+        constants_to_add_by_class = {}  # class_node -> [(name, value, type_hint)]
+        replacements = []
+        for value, occ in magic_numbers.items():
+            first_node, method_node, class_node = occ[0]
+            ctx = (method_node.text.decode('utf8') if method_node else class_node.text.decode('utf8'))
+            print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+            const_name = generator.suggest_constant_name(ctx, value)
+            if const_name:
+                print(f"     → Suggested constant: {const_name}")
+                # Determine type: simple heuristic
+                type_kw = 'double' if ('.' in value or 'e' in value.lower()) else 'int'
+                constants_list = constants_to_add_by_class.setdefault(class_node, [])
+                constants_list.append((const_name, value, type_kw))
+                for node, _, _ in occ:
+                    replacements.append((node, const_name))
+            else:
+                print("     [WARN]  Could not generate meaningful name, skipping")
+        
+        replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
+        for node, const_name in replacements:
+            transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
+        
+        # Insert inside each class, after opening brace
+        for class_node, consts in constants_to_add_by_class.items():
+            class_start = class_node.start_byte
+            class_text = class_node.text.decode('utf8')
+            # Find the first '{' relative position
+            brace_rel = class_text.find('{')
+            if brace_rel == -1:
+                continue
+            insert_pos = class_start + brace_rel + 1
+            const_lines = '\n'.join(f"    private static final {t} {n} = {v};" for n, v, t in consts) + '\n'
+            transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text='\n' + const_lines)
+            print(f"  [ADD] Added {len(consts)} constant(s) in class")
 
     elif fix_magic_numbers and lang == 'go':
-        numeric_query = queries.get("numeric_literals")
-        if numeric_query:
-            numeric_query_obj = Query(language, numeric_query)
-            magic_numbers = {}
-            for _, captures in numeric_query_obj.matches(tree.root_node):
-                for node in captures.get('number', []):
-                    value = node.text.decode('utf8')
-                    if value in ['0', '1', '-1', '2']:
-                        continue
-                    current = node.parent
-                    func_node = None
-                    while current:
-                        if current.type == 'function_declaration':
-                            func_node = current
-                            break
-                        current = current.parent
-                    magic_numbers.setdefault(value, []).append((node, func_node))
-
-            constants_to_add = []
-            replacements = []
-            for value, occ in magic_numbers.items():
-                first_node, func_node = occ[0]
-                ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
-                const_name = generator.suggest_constant_name(ctx, value)
-                if const_name:
-                    print(f"     → Suggested constant: {const_name}")
-                    constants_to_add.append((const_name, value))
-                    for node, _ in occ:
-                        replacements.append((node, const_name))
-                else:
-                    print("     [WARN]  Could not generate meaningful name, skipping")
-
-            replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
-            for node, const_name in replacements:
-                transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
-
-            if constants_to_add:
-                text = source_bytes.decode('utf8')
-                lines = text.split('\n')
-                insert_pos = 0
-                # After package and imports
-                for i, line in enumerate(lines):
-                    s = line.strip()
-                    if s and not (s.startswith('package ') or s.startswith('import ') or s.startswith('//')):
-                        insert_pos = sum(len(l) + 1 for l in lines[:i])
-                        break
-                consts_text = '\n'.join(f"const {n} = {v}" for n, v in constants_to_add) + '\n\n'
-                transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
-                print(f"  [ADD] Added {len(constants_to_add)} constant(s) at package level")
+        # Find numeric literals manually
+        def find_go_numbers(node):
+            results = []
+            if node.type in ['int_lit', 'float_lit']:
+                results.append(node)
+            for child in node.children:
+                results.extend(find_go_numbers(child))
+            return results
+        
+        magic_numbers = {}
+        for node in find_go_numbers(tree.root_node):
+            value = node.text.decode('utf8')
+            if value in ['0', '1', '-1', '2']:
+                continue
+            current = node.parent
+            func_node = None
+            while current:
+                if current.type == 'function_declaration':
+                    func_node = current
+                    break
+                current = current.parent
+            magic_numbers.setdefault(value, []).append((node, func_node))
+        
+        constants_to_add = []
+        replacements = []
+        for value, occ in magic_numbers.items():
+            first_node, func_node = occ[0]
+            ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
+            print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+            const_name = generator.suggest_constant_name(ctx, value)
+            if const_name:
+                print(f"     → Suggested constant: {const_name}")
+                constants_to_add.append((const_name, value))
+                for node, _ in occ:
+                    replacements.append((node, const_name))
+            else:
+                print("     [WARN]  Could not generate meaningful name, skipping")
+        
+        replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
+        for node, const_name in replacements:
+            transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
+        
+        if constants_to_add:
+            text = source_bytes.decode('utf8')
+            lines = text.split('\n')
+            insert_pos = 0
+            # After package and imports
+            for i, line in enumerate(lines):
+                s = line.strip()
+                if s and not (s.startswith('package ') or s.startswith('import ') or s.startswith('//')):
+                    insert_pos = sum(len(l) + 1 for l in lines[:i])
+                    break
+            consts_text = '\n'.join(f"const {n} = {v}" for n, v in constants_to_add) + '\n\n'
+            transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
+            print(f"  [ADD] Added {len(constants_to_add)} constant(s) at package level")
 
     elif fix_magic_numbers and lang == 'cpp':
-        numeric_query = queries.get("numeric_literals")
-        if numeric_query:
-            numeric_query_obj = Query(language, numeric_query)
-            magic_numbers = {}
-            for _, captures in numeric_query_obj.matches(tree.root_node):
-                for node in captures.get('number', []):
-                    value = node.text.decode('utf8')
-                    if value in ['0', '1', '-1', '2']:
-                        continue
-                    current = node.parent
-                    func_node = None
-                    while current:
-                        if current.type == 'function_definition':
-                            func_node = current
-                            break
-                        current = current.parent
-                    magic_numbers.setdefault(value, []).append((node, func_node))
-
-            constants_to_add = []
-            replacements = []
-            for value, occ in magic_numbers.items():
-                first_node, func_node = occ[0]
-                ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
-                const_name = generator.suggest_constant_name(ctx, value)
-                if const_name:
-                    print(f"     → Suggested constant: {const_name}")
-                    constants_to_add.append((const_name, value))
-                    for node, _ in occ:
-                        replacements.append((node, const_name))
-                else:
-                    print("     [WARN]  Could not generate meaningful name, skipping")
-
-            replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
-            for node, const_name in replacements:
-                transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
-
-            if constants_to_add:
-                text = source_bytes.decode('utf8')
-                lines = text.split('\n')
-                insert_pos = 0
-                # After includes
-                for i, line in enumerate(lines):
-                    s = line.strip()
-                    if s and not (s.startswith('#include') or s.startswith('//')):
-                        insert_pos = sum(len(l) + 1 for l in lines[:i])
-                        break
-                consts_text = '\n'.join(f"constexpr auto {n} = {v};" for n, v in constants_to_add) + '\n\n'
-                transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
-                print(f"  [ADD] Added {len(constants_to_add)} constant(s) at file scope")
+        # Find numeric literals manually
+        def find_cpp_numbers(node):
+            results = []
+            if node.type == 'number_literal':
+                results.append(node)
+            for child in node.children:
+                results.extend(find_cpp_numbers(child))
+            return results
+        
+        magic_numbers = {}
+        for node in find_cpp_numbers(tree.root_node):
+            value = node.text.decode('utf8')
+            if value in ['0', '1', '-1', '2']:
+                continue
+            current = node.parent
+            func_node = None
+            while current:
+                if current.type == 'function_definition':
+                    func_node = current
+                    break
+                current = current.parent
+            magic_numbers.setdefault(value, []).append((node, func_node))
+        
+        constants_to_add = []
+        replacements = []
+        for value, occ in magic_numbers.items():
+            first_node, func_node = occ[0]
+            ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
+            print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+            const_name = generator.suggest_constant_name(ctx, value)
+            if const_name:
+                print(f"     → Suggested constant: {const_name}")
+                constants_to_add.append((const_name, value))
+                for node, _ in occ:
+                    replacements.append((node, const_name))
+            else:
+                print("     [WARN]  Could not generate meaningful name, skipping")
+        
+        replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
+        for node, const_name in replacements:
+            transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text=const_name)
+        
+        if constants_to_add:
+            text = source_bytes.decode('utf8')
+            lines = text.split('\n')
+            insert_pos = 0
+            # After includes
+            for i, line in enumerate(lines):
+                s = line.strip()
+                if s and not (s.startswith('#include') or s.startswith('//')):
+                    insert_pos = sum(len(l) + 1 for l in lines[:i])
+                    break
+            consts_text = '\n'.join(f"constexpr auto {n} = {v};" for n, v in constants_to_add) + '\n\n'
+            transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
+            print(f"  [ADD] Added {len(constants_to_add)} constant(s) at file scope")
 
     # Dead code detection/removal (Python)
     if dead_code and lang == 'python':
