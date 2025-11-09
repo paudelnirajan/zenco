@@ -9,6 +9,7 @@ from .config import load_config
 from .parser import get_language_parser, get_language_queries
 from .transformers import CodeTransformer
 import textwrap
+from .formatters import FormatterFactory
 
 def init_config():
     """
@@ -166,11 +167,12 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 # indent() adds the prefix to each line, including empty lines
                 indented_content = indent(dedented_content, indentation_str)
 
-                # Assemble the final, perfectly formatted docstring
-                formatted_docstring = (
-                    f'{indentation_str}"""\n'
-                    f'{indented_content}\n'
-                    f'{indentation_str}"""\n'
+                formatter = FormatterFactory.create_formatter(lang)
+
+                # Assemble the final, perfectly formatted docstring using the formatter
+                formatted_docstring = formatter.format(
+                    dedented_content,
+                    indentation_str
                 )
 
                 # Check if first_child is already a docstring
