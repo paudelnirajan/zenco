@@ -13,6 +13,15 @@ from .transformers import CodeTransformer
 import textwrap
 from .formatters import FormatterFactory
 
+# Fix Windows Unicode encoding issues
+if sys.platform.startswith("win"):
+    try:
+        import codecs
+        sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
+        sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
+    except Exception:
+        pass
+
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -58,12 +67,12 @@ def init_config():
     Supports multiple LLM providers interactively.
     """
     print("\n" + "="*70)
-    print("  🚀 AutoDoc AI - Initial Configuration Wizard")
+    print("  [SETUP] AutoDoc AI - Initial Configuration Wizard")
     print("="*70)
     print("\nThis wizard will help you set up your preferred AI provider.")
     print("Your API key will be stored securely in a local .env file.\n")
     
-    print("📋 Supported LLM Providers:")
+    print("[INFO] Supported LLM Providers:")
     print("  1. Groq        - Fast inference, generous free tier")
     print("  2. OpenAI      - GPT-4, GPT-4o-mini (requires paid account)")
     print("  3. Anthropic   - Claude 3.5 Sonnet (requires paid account)")
@@ -84,27 +93,27 @@ def init_config():
     
     provider_name, api_key_var, model_var, default_model = provider_map[provider_choice]
     
-    print(f"\n{'─'*70}")
-    print(f"📝 Configuring {provider_name.upper()}")
-    print(f"{'─'*70}")
+    print(f"\n{'-'*70}")
+    print(f"[CONFIG] Configuring {provider_name.upper()}")
+    print(f"{'-'*70}")
     
     # Provider-specific instructions
     if provider_name == "groq":
-        print("ℹ️  Get your free API key at: https://console.groq.com/keys")
+        print("[INFO] Get your free API key at: https://console.groq.com/keys")
     elif provider_name == "openai":
-        print("ℹ️  Get your API key at: https://platform.openai.com/api-keys")
+        print("[INFO] Get your API key at: https://platform.openai.com/api-keys")
     elif provider_name == "anthropic":
-        print("ℹ️  Get your API key at: https://console.anthropic.com/")
+        print("[INFO] Get your API key at: https://console.anthropic.com/")
     elif provider_name == "gemini":
-        print("ℹ️  Get your API key at: https://aistudio.google.com/app/apikey")
+        print("[INFO] Get your API key at: https://aistudio.google.com/app/apikey")
     
-    api_key = input(f"\n🔑 Enter your {provider_name.upper()} API key: ").strip()
+    api_key = input(f"\n[INPUT] Enter your {provider_name.upper()} API key: ").strip()
     
     if not api_key:
         print("\n[ERROR] API key is required. Configuration cancelled.")
         return
     
-    model_name = input(f"🤖 Enter model name [default: {default_model}]: ").strip() or default_model
+    model_name = input(f"[INPUT] Enter model name [default: {default_model}]: ").strip() or default_model
     
     keys_to_update = {
         api_key_var: api_key,
@@ -115,7 +124,7 @@ def init_config():
     env_path = ".env"
     
     if os.path.exists(env_path):
-        print(f"\n📝 Updating existing '{env_path}' file...")
+        print(f"\n[UPDATE] Updating existing '{env_path}' file...")
         with open(env_path, "r") as f:
             lines = f.readlines()
         
@@ -137,7 +146,7 @@ def init_config():
         with open(env_path, "w") as f:
             f.writelines(lines)
     else:
-        print(f"\n📝 Creating new '{env_path}' file...")
+        print(f"\n[CREATE] Creating new '{env_path}' file...")
         with open(env_path, "w") as f:
             for key, value in keys_to_update.items():
                 f.write(f'{key}="{value}"\n')
@@ -146,12 +155,12 @@ def init_config():
     print(f"\n{'='*70}")
     print(f"  [OK] Configuration Complete!")
     print(f"{'='*70}")
-    print(f"\n📊 Your Settings:")
+    print(f"\n[SUMMARY] Your Settings:")
     print(f"  • Provider: {provider_name.upper()}")
     print(f"  • Model: {model_name}")
     print(f"  • Config file: {env_path}")
     
-    print(f"\n🚀 Next Steps:")
+    print(f"\n[NEXT] Next Steps:")
     print(f"  1. Test your setup:")
     print(f"     autodoc run examples/test.py")
     print(f"\n  2. Add type hints to your code:")
@@ -159,7 +168,7 @@ def init_config():
     print(f"\n  3. Generate docstrings:")
     print(f"     autodoc run src/ --in-place")
     
-    print(f"\n💡 Tips:")
+    print(f"\n[TIPS] Tips:")
     print(f"  • Use --help to see all available options")
     print(f"  • Change providers anytime: autodoc run --provider <name>")
     print(f"  • Run 'autodoc init' again to reconfigure")
@@ -255,7 +264,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         if name_node:
             func_name = name_node.text.decode('utf8')
             line_num = name_node.start_point[0] + 1
-            print(f"  📝 Line {line_num}: Generating docstring for `{func_name}()`", flush=True)
+            print(f"  [DOC] Line {line_num}: Generating docstring for `{func_name}()`", flush=True)
             
             docstring = generator.generate(func_node)
             
@@ -428,13 +437,13 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     continue
                 
                 line_num = name_node.start_point[0] + 1
-                print(f"  🏷️  Line {line_num}: Adding type hints to `{func_name}()`", flush=True)
+                print(f"  [TYPE] Line {line_num}: Adding type hints to `{func_name}()`", flush=True)
                 
                 try:
                     type_hints = generator.generate_type_hints(func_node)
                     
                     if not type_hints or (not type_hints.get('parameters') and not type_hints.get('return_type')):
-                        print(f"     ⚠️  Could not infer types for `{func_name}()`")
+                        print(f"     [WARN] Could not infer types for `{func_name}()`")
                         continue
                     
                     # Build the new function signature with type hints
@@ -597,7 +606,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 function_code = first_function.text.decode('utf8')
                 
                 line_num = first_node.start_point[0] + 1
-                print(f"  🔢 Line {line_num}: Found magic number `{value}`", flush=True)
+                print(f"  [MAGIC] Line {line_num}: Found magic number `{value}`", flush=True)
                 
                 # Get LLM suggestion for constant name
                 constant_name = generator.suggest_constant_name(function_code, value)
@@ -610,7 +619,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     for node, _ in occurrences:
                         replacements.append((node, constant_name))
                 else:
-                    print(f"     ⚠️  Could not generate meaningful name, skipping")
+                    print(f"     [WARN] Could not generate meaningful name, skipping")
             
             # Apply replacements (in reverse order to maintain byte offsets)
             replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
@@ -677,7 +686,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             for value, occ in magic_numbers.items():
                 first_node, func_node = occ[0]
                 context_code = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  🔢 Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
                 const_name = generator.suggest_constant_name(context_code, value) or None
                 if const_name:
                     print(f"     → Suggested constant: {const_name}")
@@ -685,7 +694,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     for node, _ in occ:
                         replacements.append((node, const_name))
                 else:
-                    print("     ⚠️  Could not generate meaningful name, skipping")
+                    print("     [WARN]  Could not generate meaningful name, skipping")
 
             replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
             for node, const_name in replacements:
@@ -737,7 +746,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             for value, occ in magic_numbers.items():
                 first_node, method_node, class_node = occ[0]
                 ctx = (method_node.text.decode('utf8') if method_node else class_node.text.decode('utf8'))
-                print(f"  🔢 Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
                 const_name = generator.suggest_constant_name(ctx, value)
                 if const_name:
                     print(f"     → Suggested constant: {const_name}")
@@ -748,7 +757,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     for node, _, _ in occ:
                         replacements.append((node, const_name))
                 else:
-                    print("     ⚠️  Could not generate meaningful name, skipping")
+                    print("     [WARN]  Could not generate meaningful name, skipping")
 
             replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
             for node, const_name in replacements:
@@ -765,7 +774,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 insert_pos = class_start + brace_rel + 1
                 const_lines = '\n'.join(f"    private static final {t} {n} = {v};" for n, v, t in consts) + '\n'
                 transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text='\n' + const_lines)
-                print(f"  📦 Added {len(consts)} constant(s) in class")
+                print(f"  [ADD] Added {len(consts)} constant(s) in class")
 
     elif fix_magic_numbers and lang == 'go':
         numeric_query = queries.get("numeric_literals")
@@ -791,7 +800,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             for value, occ in magic_numbers.items():
                 first_node, func_node = occ[0]
                 ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  🔢 Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
                 const_name = generator.suggest_constant_name(ctx, value)
                 if const_name:
                     print(f"     → Suggested constant: {const_name}")
@@ -799,7 +808,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     for node, _ in occ:
                         replacements.append((node, const_name))
                 else:
-                    print("     ⚠️  Could not generate meaningful name, skipping")
+                    print("     [WARN]  Could not generate meaningful name, skipping")
 
             replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
             for node, const_name in replacements:
@@ -817,7 +826,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                         break
                 consts_text = '\n'.join(f"const {n} = {v}" for n, v in constants_to_add) + '\n\n'
                 transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
-                print(f"  📦 Added {len(constants_to_add)} constant(s) at package level")
+                print(f"  [ADD] Added {len(constants_to_add)} constant(s) at package level")
 
     elif fix_magic_numbers and lang == 'cpp':
         numeric_query = queries.get("numeric_literals")
@@ -843,7 +852,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             for value, occ in magic_numbers.items():
                 first_node, func_node = occ[0]
                 ctx = func_node.text.decode('utf8') if func_node else source_bytes.decode('utf8')
-                print(f"  🔢 Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
+                print(f"  [MAGIC] Line {first_node.start_point[0] + 1}: Found magic number `{value}`")
                 const_name = generator.suggest_constant_name(ctx, value)
                 if const_name:
                     print(f"     → Suggested constant: {const_name}")
@@ -851,7 +860,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     for node, _ in occ:
                         replacements.append((node, const_name))
                 else:
-                    print("     ⚠️  Could not generate meaningful name, skipping")
+                    print("     [WARN]  Could not generate meaningful name, skipping")
 
             replacements.sort(key=lambda x: x[0].start_byte, reverse=True)
             for node, const_name in replacements:
@@ -869,7 +878,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                         break
                 consts_text = '\n'.join(f"constexpr auto {n} = {v};" for n, v in constants_to_add) + '\n\n'
                 transformer.add_change(start_byte=insert_pos, end_byte=insert_pos, new_text=consts_text)
-                print(f"  📦 Added {len(constants_to_add)} constant(s) at file scope")
+                print(f"  [ADD] Added {len(constants_to_add)} constant(s) at file scope")
 
     # Dead code detection/removal (Python)
     if dead_code and lang == 'python':
@@ -930,7 +939,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                         func_calls.add(node.func.attr)
 
             # Report and optionally remove unused imports
-            print("\n  🧹 Dead Code Report (Python):")
+            print("\n  [CLEANUP] Dead Code Report (Python):")
             to_delete_lines = []
             unused_imports_count = 0
             for imp in imports:
@@ -968,14 +977,14 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     line_start = sum(len(l) + 1 for l in lines[:ln-1])
                     line_end = line_start + len(lines[ln-1]) + 1  # include newline
                     transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-                print(f"  ✂️  Removed {len(to_delete_lines)} unused import line(s)")
+                print(f"  [REMOVE]  Removed {len(to_delete_lines)} unused import line(s)")
 
             if in_place and unused_vars:
                 for _, ln, _ in sorted(unused_vars, key=lambda x: x[1], reverse=True):
                     line_start = sum(len(l) + 1 for l in lines[:ln-1])
                     line_end = line_start + len(lines[ln-1]) + 1
                     transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-                print(f"  ✂️  Removed {len(unused_vars)} unused top-level variable assignment(s)")
+                print(f"  [REMOVE]  Removed {len(unused_vars)} unused top-level variable assignment(s)")
 
             # Strict mode: delete never-called private functions (name starts with '_')
             if in_place and dead_code_strict:
@@ -1000,7 +1009,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                         transformer.add_change(start_byte=start_byte, end_byte=end_byte, new_text='')
                         removed_funcs += 1
                 if removed_funcs:
-                    print(f"  ✂️  Strict: Removed {removed_funcs} private never-called function(s)")
+                    print(f"  [REMOVE]  Strict: Removed {removed_funcs} private never-called function(s)")
 
             # Strict mode: remove unused local variables (simple, safe cases)
             if in_place and dead_code_strict:
@@ -1036,9 +1045,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                                 transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
                                 removed_locals += 1
                 except Exception as e:
-                    print(f"  ⚠️  Python local-var strict removal error: {e}")
+                    print(f"  [WARN]  Python local-var strict removal error: {e}")
                 if removed_locals:
-                    print(f"  ✂️  Strict: Removed {removed_locals} unused local variable declaration(s)")
+                    print(f"  [REMOVE]  Strict: Removed {removed_locals} unused local variable declaration(s)")
 
     # Dead code detection/removal (JavaScript)
     if dead_code and lang == 'javascript':
@@ -1130,7 +1139,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                                 if ident and ident.replace('_','').replace('$','').isalnum():
                                     local_candidates_js.append((func_node, cur, ident, cur.start_point[0] + 1))
         except Exception as e:
-            print(f"  ⚠️  JS scanning error: {e}")
+            print(f"  [WARN]  JS scanning error: {e}")
 
         # Build usage map via naive search (exclude declaration/import lines)
         used = set()
@@ -1148,7 +1157,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
         # Unused imports
         unused_imports = [(n, ln) for (n, ln) in imported if n not in used]
         if unused_imports:
-            print("\n  🧹 Dead Code Report (JavaScript):")
+            print("\n  [CLEANUP] Dead Code Report (JavaScript):")
             for n, ln in unused_imports:
                 print(f"  • Unused import: {n} (line {ln})")
         if in_place and unused_imports:
@@ -1158,7 +1167,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 line_start = sum(len(l) + 1 for l in lines[:ln-1])
                 line_end = line_start + len(lines[ln-1]) + 1
                 transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-            print(f"  ✂️  Removed {len(del_lines)} unused import line(s)")
+            print(f"  [REMOVE]  Removed {len(del_lines)} unused import line(s)")
 
         # Unused top-level const/let
         unused_vars_js = [(n, ln) for (n, ln) in top_level_vars if n not in used]
@@ -1170,7 +1179,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 line_start = sum(len(l) + 1 for l in lines[:ln-1])
                 line_end = line_start + len(lines[ln-1]) + 1
                 transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-            print(f"  ✂️  Removed {len(unused_vars_js)} unused top-level variable declaration(s)")
+            print(f"  [REMOVE]  Removed {len(unused_vars_js)} unused top-level variable declaration(s)")
 
         # Strict: remove unused local variables inside functions (conservative)
         if dead_code_strict and in_place and local_candidates_js:
@@ -1194,7 +1203,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 transformer.add_change(start_byte=decl_node.start_byte, end_byte=decl_node.end_byte, new_text='')
                 removed_locals += 1
             if removed_locals:
-                print(f"  ✂️  Strict: Removed {removed_locals} unused local variable declaration(s)")
+                print(f"  [REMOVE]  Strict: Removed {removed_locals} unused local variable declaration(s)")
 
     # Dead code detection/removal (Java)
     if dead_code and lang == 'java':
@@ -1286,7 +1295,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             # Unused imports
             unused_imports = [(ln, text, name) for (ln, text, name) in import_lines if name not in used]
             if unused_imports:
-                print("\n  🧹 Dead Code Report (Java):")
+                print("\n  [CLEANUP] Dead Code Report (Java):")
                 for ln, text, name in unused_imports:
                     print(f"  • Unused import: {name} (line {ln})")
             if in_place and unused_imports:
@@ -1294,7 +1303,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     line_start = sum(len(l) + 1 for l in lines[:ln-1])
                     line_end = line_start + len(lines[ln-1]) + 1
                     transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-                print(f"  ✂️  Removed {len(unused_imports)} unused import line(s)")
+                print(f"  [REMOVE]  Removed {len(unused_imports)} unused import line(s)")
 
             # Unused private fields (single declarator only)
             unused_fields = [(node, name, ln) for (node, name, ln) in private_fields if name not in used]
@@ -1305,7 +1314,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     start_byte = node.start_byte
                     end_byte = node.end_byte
                     transformer.add_change(start_byte=start_byte, end_byte=end_byte, new_text='')
-                print(f"  ✂️  Removed {len(unused_fields)} unused private field(s)")
+                print(f"  [REMOVE]  Removed {len(unused_fields)} unused private field(s)")
 
             # Strict: private never-called methods
             if dead_code_strict and in_place and private_methods:
@@ -1324,7 +1333,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 if to_remove:
                     for node, _, _ in sorted(to_remove, key=lambda x: x[2], reverse=True):
                         transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text='')
-                    print(f"  ✂️  Strict: Removed {len(to_remove)} private never-called method(s)")
+                    print(f"  [REMOVE]  Strict: Removed {len(to_remove)} private never-called method(s)")
             # Strict: remove unused local variables inside methods (conservative)
             if dead_code_strict and in_place and local_candidates_java:
                 removed_locals = 0
@@ -1346,9 +1355,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     transformer.add_change(start_byte=decl_node.start_byte, end_byte=decl_node.end_byte, new_text='')
                     removed_locals += 1
                 if removed_locals:
-                    print(f"  ✂️  Strict: Removed {removed_locals} unused local variable declaration(s)")
+                    print(f"  [REMOVE]  Strict: Removed {removed_locals} unused local variable declaration(s)")
         except Exception as e:
-            print(f"  ⚠️  Java dead-code scan error: {e}")
+            print(f"  [WARN]  Java dead-code scan error: {e}")
 
     # Dead code detection/removal (Go)
     if dead_code and lang == 'go':
@@ -1441,14 +1450,14 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             # Unused imports
             unused_imps = [(spec, pkg, ln) for (spec, pkg, ln) in import_specs if pkg not in used]
             if unused_imps:
-                print("\n  🧹 Dead Code Report (Go):")
+                print("\n  [CLEANUP] Dead Code Report (Go):")
                 for _, pkg, ln in unused_imps:
                     print(f"  • Unused import: {pkg} (line {ln})")
             if in_place and unused_imps:
                 # Remove individual import_spec nodes
                 for spec, _, _ in sorted(unused_imps, key=lambda x: x[2], reverse=True):
                     transformer.add_change(start_byte=spec.start_byte, end_byte=spec.end_byte, new_text='')
-                print(f"  ✂️  Removed {len(unused_imps)} unused import spec(s)")
+                print(f"  [REMOVE]  Removed {len(unused_imps)} unused import spec(s)")
 
             # Unused top-level var/const (single identifier only)
             unused_top = [(node, name, ln) for (node, name, ln) in top_level_specs if name not in used]
@@ -1457,7 +1466,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             if in_place and unused_top:
                 for node, _, _ in sorted(unused_top, key=lambda x: x[2], reverse=True):
                     transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text='')
-                print(f"  ✂️  Removed {len(unused_top)} unused top-level var/const spec(s)")
+                print(f"  [REMOVE]  Removed {len(unused_top)} unused top-level var/const spec(s)")
 
             # Strict: remove unused local variables (simple literal initializers)
             if dead_code_strict and in_place and local_candidates:
@@ -1481,9 +1490,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     transformer.add_change(start_byte=decl_node.start_byte, end_byte=decl_node.end_byte, new_text='')
                     removed_locals += 1
                 if removed_locals:
-                    print(f"  ✂️  Strict: Removed {removed_locals} unused local variable declaration(s)")
+                    print(f"  [REMOVE]  Strict: Removed {removed_locals} unused local variable declaration(s)")
         except Exception as e:
-            print(f"  ⚠️  Go dead-code scan error: {e}")
+            print(f"  [WARN]  Go dead-code scan error: {e}")
 
     # Dead code detection/removal (C++)
     if dead_code and lang == 'cpp':
@@ -1570,11 +1579,11 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             # Unused top-level variables
             unused_vars = [(node, name, ln) for (node, name, ln) in top_level_vars if name not in used]
             for _, name, ln in unused_vars:
-                print(f"\n  🧹 Dead Code Report (C++):\n  • Unused global variable: {name} (line {ln})")
+                print(f"\n  [CLEANUP] Dead Code Report (C++):\n  • Unused global variable: {name} (line {ln})")
             if in_place and unused_vars:
                 for node, _, _ in sorted(unused_vars, key=lambda x: x[2], reverse=True):
                     transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text='')
-                print(f"  ✂️  Removed {len(unused_vars)} unused global variable declaration(s)")
+                print(f"  [REMOVE]  Removed {len(unused_vars)} unused global variable declaration(s)")
 
             # Strict: static never-called functions
             if dead_code_strict and in_place and static_functions:
@@ -1593,7 +1602,7 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 if to_remove:
                     for node, _, _ in sorted(to_remove, key=lambda x: x[2], reverse=True):
                         transformer.add_change(start_byte=node.start_byte, end_byte=node.end_byte, new_text='')
-                    print(f"  ✂️  Strict: Removed {len(to_remove)} static never-called function(s)")
+                    print(f"  [REMOVE]  Strict: Removed {len(to_remove)} static never-called function(s)")
 
             # Strict: remove unused local variables inside functions (conservative)
             if dead_code_strict and in_place and local_unused_candidates:
@@ -1624,14 +1633,14 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                     transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
                     removed_locals += 1
                 if removed_locals:
-                    print(f"  ✂️  Strict: Removed {removed_locals} unused local variable declaration(s)")
+                    print(f"  [REMOVE]  Strict: Removed {removed_locals} unused local variable declaration(s)")
         except Exception as e:
-            print(f"  ⚠️  C++ dead-code scan error: {e}")
+            print(f"  [WARN]  C++ dead-code scan error: {e}")
 
     new_code = transformer.apply_changes()
     if in_place:
         if new_code != source_bytes:
-            print("\n  💾 Saving changes to file...")
+            print("\n  [SAVE] Saving changes to file...")
             try:
                 with open(filepath, 'wb') as f:
                     f.write(new_code)
@@ -1639,11 +1648,11 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             except IOError as e:
                 print(f"  [ERROR] Error writing to file: {e}")
         else:
-            print("\n  ℹ️  No changes needed for this file.")
+            print("\n  [INFO] No changes needed for this file.")
     else:
         # Print to console if not in_place
-        print("\n  👁️  Preview of Changes (Dry Run):")
-        print(f"  {'─'*66}\n")
+        print("\n  [PREVIEW] Preview of Changes (Dry Run):")
+        print(f"  {'-'*66}\n")
         print(new_code.decode('utf8'))
 
 
@@ -1651,11 +1660,11 @@ def run_autodoc(args):
     """The main entry point for running the analysis."""
     if RICH_AVAILABLE:
         console = Console()
-        console.print(Panel.fit("🤖 [bold blue]AutoDoc AI[/bold blue] - Code Analysis & Enhancement", 
+        console.print(Panel.fit("AutoDoc AI - Code Analysis & Enhancement", 
                                border_style="blue", padding=(1, 2)))
     else:
         cprint(f"\n{'='*70}", 'cyan')
-        cprint(f"  🤖 AutoDoc AI - Code Analysis & Enhancement", 'blue', 'bold')
+        cprint(f"  AutoDoc AI - Code Analysis & Enhancement", 'blue', 'bold')
         cprint(f"{'='*70}\n", 'cyan')
     
     # Determine which features are enabled (opt-in)
@@ -1693,43 +1702,43 @@ def run_autodoc(args):
         umbrella = ["Docstrings", "Type Hints", "Magic Numbers", "Dead Code"]
         if refactor_strict_enabled:
             umbrella.append("Strict Dead Code")
-        cprint(f"🧰 Refactor mode enabled → {', '.join(umbrella)}", 'green')
+        cprint(f"[REFACTOR] Refactor mode enabled -> {', '.join(umbrella)}", 'green')
 
     if not any([docstrings_enabled, hints_enabled, magic_enabled, dead_code_enabled]):
-        cprint("⚠️  No features selected. Use one or more of: --docstrings, --overwrite-existing, --add-type-hints, --fix-magic-numbers, --dead-code, --dead-code-strict, --refactor, --refactor-strict", 'yellow')
+        cprint("[WARN]  No features selected. Use one or more of: --docstrings, --overwrite-existing, --add-type-hints, --fix-magic-numbers, --dead-code, --dead-code-strict, --refactor, --refactor-strict", 'yellow')
         return
     
-    print(f"📋 Active Features: {', '.join(features)}")
-    print(f"📝 Docstring Style: {args.style}")
+    print(f"[FEATURES] Active Features: {', '.join(features)}")
+    print(f"[STYLE] Docstring Style: {args.style}")
     
     if args.diff:
-        print(f"🔍 Mode: Git-changed files only\n")
+        print(f"[MODE] Git-changed files only\n")
         print("Scanning for modified files...")
         source_files = get_git_changed_files()
         if source_files is None: 
             print("[ERROR] Error: Not a git repository or no changes found.")
             sys.exit(1)
     else:
-        print(f"📂 Target: {args.path}\n")
+        print(f"[TARGET] Target: {args.path}\n")
         print("Scanning for source files...")
         source_files = get_source_files(args.path)
     
     if not source_files:
-        print("\n⚠️  No source files found to process.")
-        print("💡 Tip: Make sure you're in the right directory or specify a path.")
+        print("\n[WARN]  No source files found to process.")
+        print("[TIP] Tip: Make sure you're in the right directory or specify a path.")
         return
 
-    print(f"✓ Found {len(source_files)} file(s) to process.\n")
+    print(f"[OK] Found {len(source_files)} file(s) to process.\n")
     
     # Show provider info
     provider = getattr(args, 'provider', None) or os.getenv('AUTODOC_PROVIDER', 'groq')
     model = getattr(args, 'model', None)
     if args.strategy != 'mock':
-        print(f"🤖 Using: {provider.upper()}" + (f" ({model})" if model else ""))
+        print(f"[AI] Using: {provider.upper()}" + (f" ({model})" if model else ""))
         if not args.in_place:
-            print(f"👁️  Mode: Dry-run (preview only - use --in-place to save changes)")
+            print(f"  Mode: Dry-run (preview only - use --in-place to save changes)")
         else:
-            print(f"💾 Mode: In-place (files will be modified)")
+            print(f"  Mode: In-place (files will be modified)")
         print()
     
     try:
@@ -1744,7 +1753,7 @@ def run_autodoc(args):
         print(f"[TIP] Tip: Run 'autodoc init' to configure your provider.")
         sys.exit(1)
 
-    print(f"{'─'*70}\n")
+    print(f"{'-'*70}\n")
     
     for i, filepath in enumerate(source_files, 1):
         print(f"[{i}/{len(source_files)}] Processing: {filepath}")
@@ -1759,17 +1768,17 @@ def run_autodoc(args):
             dead_code=dead_code_enabled,
             dead_code_strict=dead_code_strict_enabled,
         )
-        print(f"{'─'*70}\n")
+        print(f"{'-'*70}\n")
     
     # Summary
     print(f"{'='*70}")
     print(f"  [OK] Processing Complete!")
     print(f"{'='*70}")
-    print(f"\n📊 Summary:")
-    print(f"  • Files processed: {len(source_files)}")
-    print(f"  • Mode: {'Modified files' if args.in_place else 'Preview only'}")
+    print(f"\nSummary:")
+    print(f"  * Files processed: {len(source_files)}")
+    print(f"  * Mode: {'Modified files' if args.in_place else 'Preview only'}")
     if not args.in_place:
-        print(f"\n💡 To apply changes, add the --in-place flag")
+        print(f"\nTo apply changes, add the --in-place flag")
     print(f"\n{'='*70}\n")
 
 
@@ -1778,10 +1787,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="autodoc",
         description="""
-╔══════════════════════════════════════════════════════════════════════╗
-║                   🤖 AutoDoc AI v0.1.4                               ║
-║          AI-Powered Code Documentation & Enhancement Tool            ║
-╚══════════════════════════════════════════════════════════════════════╝
+AutoDoc AI v0.1.4
 
 AutoDoc AI automatically generates docstrings, adds type hints, and 
 improves code quality using Large Language Models (LLMs).
@@ -1830,10 +1836,10 @@ For more help: https://github.com/paudelnirajan/autodoc
         help="Analyze and enhance your code with AI",
         description="""
 Analyze source code files and apply AI-powered improvements:
-  • Generate missing docstrings
-  • Add type hints to functions
-  • Improve existing documentation
-  • Refactor poorly named variables/functions
+  * Generate missing docstrings
+  * Add type hints to functions
+  * Improve existing documentation
+  * Refactor poorly named variables/functions
 
 By default, runs in preview mode. Use --in-place to save changes.
         """,
@@ -1884,7 +1890,7 @@ Examples:
     parser_run.add_argument(
         "--in-place",
         action="store_true",
-        help="⚠️  Modify files directly (default: preview only)"
+        help="Modify files directly (default: preview only)"
     )
     
     parser_run.add_argument(
