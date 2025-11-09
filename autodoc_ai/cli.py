@@ -2,6 +2,8 @@ import argparse
 import sys
 import os
 from textwrap import indent
+import traceback
+from textwrap import indent
 from tree_sitter import QueryCursor
 from .generators import GeneratorFactory, IDocstringGenerator
 from .utils import get_source_files, get_git_changed_files
@@ -62,7 +64,7 @@ def init_config():
     print(f"\nConfiguration saved to '{env_path}'.")
 
 
-def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool):
+def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool, overwrite_existing: bool):
     """
     Processes a single file using the Tree-sitter engine to find and
     report undocumented functions.
@@ -72,6 +74,9 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     lang = None
     if filepath.endswith('.py'): lang = 'python'
     elif filepath.endswith('.js'): lang = 'javascript'
+    elif filepath.endswith('.java'): lang = 'java'
+    elif filepath.endswith('.go'): lang = 'go'
+    elif filepath.endswith('.cpp') or filepath.endswith('.hpp') or filepath.endswith('.h'): lang = 'cpp'
 
     parser = get_language_parser(lang)
     if not parser: return
@@ -100,15 +105,19 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     
     # Get all functions (matches returns (pattern_index, {capture_name: [nodes]}) tuples)
     all_functions = set()
-    for pattern_index, captures in all_func_cursor.matches(tree.root_node):
-        if 'func' in captures:
-            all_functions.update(captures['func'])
+    for _, captures in all_func_cursor.matches(tree.root_node):
+        for node in captures.get('func', []):
+            all_functions.add(node)
     
-    # Get documented functions
-    documented_funtions = set()
-    for pattern_index, captures in documented_func_cursor.matches(tree.root_node):
-        if 'func' in captures:
-            documented_funtions.update(captures['func'])
+    documented_nodes = {}
+    for _, captures in documented_func_cursor.matches(tree.root_node):
+        func_nodes = captures.get('func', [])
+        doc_nodes = captures.get('docstring', [])
+        for i, func_node in enumerate(func_nodes):
+            if i < len(doc_nodes):
+                documented_nodes[func_node] = doc_nodes[i]
+    
+    documented_funtions = set(documented_nodes.keys())
     
     # Also manually check for docstrings as a fallback (in case query doesn't match)
     # A function has a docstring if its first statement is a string literal
@@ -121,11 +130,22 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
                 expr = first_stmt.children[0] if first_stmt.children else None
                 if expr and expr.type == 'string':
                     documented_funtions.add(func_node)
+                    documented_nodes[func_node] = expr
 
     undocumented_functions = all_functions - documented_funtions
 
     for func_node in undocumented_functions:
-        name_node = func_node.child_by_field_name('name')
+        # Get function name - different field names for different languages
+        name_node = func_node.child_by_field_name('name')  # Python, Java, JS
+        if not name_node:
+            # For C++, the name is in declarator -> identifier
+            declarator = func_node.child_by_field_name('declarator')
+            if declarator:
+                for child in declarator.children:
+                    if child.type == 'identifier':
+                        name_node = child
+                        break
+        
         if name_node:
             func_name = name_node.text.decode('utf8')
             line_num = name_node.start_point[0] + 1
@@ -133,93 +153,144 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             
             docstring = generator.generate(func_node)
             
-            # For Python, we need to find where the body of the function starts
-            # to inject the docstring with the correct indentation.
-            body_node = func_node.child_by_field_name("body")
-            if body_node and body_node.children:
-                try:
-                    # Get the function definition's indentation by reading the source line
-                    # This is more reliable than using tree-sitter's start_point
-                    source_text = source_bytes.decode('utf8')
-                    func_start_line = func_node.start_point[0]
-                    func_line = source_text.split('\n')[func_start_line]
-                    func_def_indent = len(func_line) - len(func_line.lstrip())
+            # Handle docstring insertion based on language
+            # For Python: insert inside the function body
+            # For Java/JS/C++: insert before the function declaration
+            if lang == 'python':
+                body_node = func_node.child_by_field_name("body")
+                if body_node and body_node.children:
+                    try:
+                        # Get the function definition's indentation by reading the source line
+                        # This is more reliable than using tree-sitter's start_point
+                        source_text = source_bytes.decode('utf8')
+                        func_start_line = func_node.start_point[0]
+                        func_line = source_text.split('\n')[func_start_line]
+                        func_def_indent = len(func_line) - len(func_line.lstrip())
+                        
+                        # Standard Python indentation is 4 spaces from the function definition
+                        # We'll use this consistently to avoid issues with malformed code
+                        body_indent_level = func_def_indent + 4
+                        indentation_str = ' ' * body_indent_level
+                        first_child = body_node.children[0]
+                    except Exception as e:
+                        print(f"  ERROR in indentation calculation: {e}", flush=True)
+                        import traceback
+                        traceback.print_exc()
+                        continue
+
+                    # Clean the raw docstring from the LLM (remove any existing indentation)
+                    docstring_content_raw = docstring.strip()
                     
-                    # Standard Python indentation is 4 spaces from the function definition
-                    # We'll use this consistently to avoid issues with malformed code
-                    body_indent_level = func_def_indent + 4
-                    indentation_str = ' ' * body_indent_level
-                    first_child = body_node.children[0]
-                except Exception as e:
-                    print(f"  ERROR in indentation calculation: {e}", flush=True)
-                    import traceback
-                    traceback.print_exc()
-                    continue
+                    # Use textwrap.dedent to remove common leading whitespace
+                    # This handles cases where the LLM returns pre-indented content
+                    dedented_content = textwrap.dedent(docstring_content_raw).strip()
+                    
+                    # Re-indent the cleaned content to match the function's body indentation
+                    # indent() adds the prefix to each line, including empty lines
+                    indented_content = indent(dedented_content, indentation_str)
 
-                # Clean the raw docstring from the LLM (remove any existing indentation)
-                docstring_content_raw = docstring.strip()
-                
-                # Use textwrap.dedent to remove common leading whitespace
-                # This handles cases where the LLM returns pre-indented content
-                dedented_content = textwrap.dedent(docstring_content_raw).strip()
-                
-                # Re-indent the cleaned content to match the function's body indentation
-                # indent() adds the prefix to each line, including empty lines
-                indented_content = indent(dedented_content, indentation_str)
+                    formatter = FormatterFactory.create_formatter(lang)
+                    formatted_docstring = formatter.format(docstring, indentation_str)
 
+                    # Check if first_child is already a docstring
+                    is_docstring = (first_child.type == 'expression_statement' and 
+                                   first_child.children and 
+                                   first_child.children[0].type == 'string')
+                    
+                    if is_docstring:
+                        # Replace the existing docstring
+                        # Find the start of the line to replace any incorrect indentation
+                        first_stmt_line_num = first_child.start_point[0]
+                        lines = source_text.split('\n')
+                        line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])
+                        
+                        insertion_point = line_start_byte
+                        end_point = first_child.end_byte
+                        formatted_docstring = formatted_docstring.rstrip() + '\n' + indentation_str
+                        transformer.add_change(
+                            start_byte=insertion_point,
+                            end_byte=end_point,
+                            new_text=formatted_docstring
+                        )
+                    else:
+                        # Insert before the first statement
+                        # We need to find the actual start of the line and replace any incorrect indentation
+                        # first_child.start_point gives us (line, column)
+                        first_stmt_line_num = first_child.start_point[0]
+                        first_stmt_col = first_child.start_point[1]
+                        
+                        # Find the start of this line in the source
+                        lines = source_text.split('\n')
+                        line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])  # +1 for \n
+                        
+                        # The insertion point is at the start of the line
+                        # We'll replace from line start to the actual statement start
+                        # This removes any incorrect indentation
+                        insertion_point = line_start_byte
+                        end_point = first_child.start_byte
+                        
+                        # Add proper indentation before the statement
+                        formatted_docstring = formatted_docstring + indentation_str
+                        
+                        transformer.add_change(
+                            start_byte=insertion_point,
+                            end_byte=end_point,
+                            new_text=formatted_docstring
+                        )
+            else:
+                # For Java, JavaScript, C++, Go: insert docstring before the function declaration
+                source_text = source_bytes.decode('utf8')
+                func_start_line = func_node.start_point[0]
+                func_line = source_text.split('\n')[func_start_line]
+                func_def_indent = len(func_line) - len(func_line.lstrip())
+                indentation_str = ' ' * func_def_indent
+                
                 formatter = FormatterFactory.create_formatter(lang)
-
-                # Assemble the final, perfectly formatted docstring using the formatter
-                formatted_docstring = formatter.format(
-                    dedented_content,
-                    indentation_str
+                formatted_docstring = formatter.format(docstring, indentation_str)
+                
+                # Find the start of the line where the function declaration begins
+                lines = source_text.split('\n')
+                line_start_byte = sum(len(line) + 1 for line in lines[:func_start_line])
+                
+                # Insert the docstring before the function declaration
+                transformer.add_change(
+                    start_byte=line_start_byte,
+                    end_byte=line_start_byte,
+                    new_text=formatted_docstring
                 )
 
-                # Check if first_child is already a docstring
-                is_docstring = (first_child.type == 'expression_statement' and 
-                               first_child.children and 
-                               first_child.children[0].type == 'string')
+    # If overwrite is enabled, process functions that already have docstrings
+    if overwrite_existing:
+        for func_node, doc_node in documented_nodes.items():
+            docstring_text = doc_node.text.decode('utf8')
+            
+            is_good = generator.evaluate(func_node, docstring_text)
+            
+            if not is_good:
+                name_node = func_node.child_by_field_name('name')
+                func_name = name_node.text.decode('utf8') if name_node else 'unknown'
+                print(f"L{doc_node.start_point[0]+1}:[Refactor] Regenerating poor-quality docstring for `{func_name}`.")
+
+                new_docstring = generator.generate(func_node)
                 
-                if is_docstring:
-                    # Replace the existing docstring
-                    # Find the start of the line to replace any incorrect indentation
-                    first_stmt_line_num = first_child.start_point[0]
-                    lines = source_text.split('\n')
-                    line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])
+                try:
+                    source_text = source_bytes.decode('utf8')
+                    func_line = source_text.split('\n')[func_node.start_point[0]]
+                    func_def_indent = len(func_line) - len(func_line.lstrip())
+                    body_indent_level = func_def_indent + 4
+                    indentation_str = ' ' * body_indent_level
                     
-                    insertion_point = line_start_byte
-                    end_point = first_child.end_byte
-                    formatted_docstring = formatted_docstring.rstrip() + '\n' + indentation_str
+                    formatter = FormatterFactory.create_formatter(lang)
+                    formatted_docstring = formatter.format(new_docstring, indentation_str).strip()
+
                     transformer.add_change(
-                        start_byte=insertion_point,
-                        end_byte=end_point,
+                        start_byte=doc_node.start_byte,
+                        end_byte=doc_node.end_byte,
                         new_text=formatted_docstring
                     )
-                else:
-                    # Insert before the first statement
-                    # We need to find the actual start of the line and replace any incorrect indentation
-                    # first_child.start_point gives us (line, column)
-                    first_stmt_line_num = first_child.start_point[0]
-                    first_stmt_col = first_child.start_point[1]
-                    
-                    # Find the start of this line in the source
-                    lines = source_text.split('\n')
-                    line_start_byte = sum(len(line) + 1 for line in lines[:first_stmt_line_num])  # +1 for \n
-                    
-                    # The insertion point is at the start of the line
-                    # We'll replace from line start to the actual statement start
-                    # This removes any incorrect indentation
-                    insertion_point = line_start_byte
-                    end_point = first_child.start_byte
-                    
-                    # Add proper indentation before the statement
-                    formatted_docstring = formatted_docstring + indentation_str
-                    
-                    transformer.add_change(
-                        start_byte=insertion_point,
-                        end_byte=end_point,
-                        new_text=formatted_docstring
-                    )
+                except Exception as e:
+                    print(f"  ERROR processing documented function: {e}", flush=True)
+                    continue
 
     new_code = transformer.apply_changes()
     if in_place:
@@ -260,6 +331,7 @@ def run_autodoc(args):
     for filepath in source_files:
         process_file_with_treesitter(filepath=filepath, generator=generator,
         in_place=args.in_place,
+        overwrite_existing=args.overwrite_existing,
         )
         print("-" * 50)
 

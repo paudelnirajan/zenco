@@ -13,13 +13,20 @@ class PythonFormatter(IDocstringFormatter):
         indented_content = indent(docstring.strip(), indentation)
         return f'{indentation}"""\n{indented_content}\n{indentation}"""\n'
 
-class JSDocFormatter(IDocstringFormatter):
-    """Formats docstrings for Javascript/TypeScript."""
-    def format(self, docstring: str, indentation: str):
+class CStyleDocFormatter(IDocstringFormatter): 
+    """Formats docstrings for C-style languages (Java, JS, C++, etc.)."""
+    def format(self, docstring: str, indentation: str) -> str:
         lines = docstring.strip().split('\n')
-        jsdoc_lines = [f"{indentation} * {line}" for line in lines]
-        jsdoc_content = '\n'.join(jsdoc_lines)
-        return f"{indentation}/**\n{jsdoc_content}\n{indentation} */ \n"
+        doc_lines = [f"{indentation} * {line}" for line in lines]
+        content = '\n'.join(doc_lines)
+        return f"{indentation}/**\n{content}\n{indentation} */\n"
+
+class GoFormatter(IDocstringFormatter):
+    """Formats docstrings for Go."""
+    def format(self, docstring: str, indentation: str) -> str:
+        lines = docstring.strip().split('\n')
+        go_lines = [f"{indentation}// {line}" for line in lines]
+        return '\n'.join(go_lines) + '\n'
 
 class FormatterFactory:
     """A factory to create the appropriate docstring formatter."""
@@ -28,7 +35,7 @@ class FormatterFactory:
         if language == "python":
             return PythonFormatter()
 
-        if language == "javascript":
-            return JSDocFormatter()
+        if language in ['javascript', 'java', 'c', 'cpp', 'go']:
+            return CStyleDocFormatter()
         
         return PythonFormatter()

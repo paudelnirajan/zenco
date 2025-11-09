@@ -2,7 +2,15 @@ import os
 import pathspec
 import git
 
-SUPPORTED_EXTENSIONS = {".py", ".js"}
+SUPPORTED_EXTENSIONS = {
+    '.py', 
+    '.js', 
+    '.java', 
+    '.go', 
+    '.cpp', 
+    '.hpp', 
+    '.h'
+}
 
 def get_source_files(path: str) -> list[str]:
     """
