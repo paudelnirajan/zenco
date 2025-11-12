@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zenco"
-version = "1.1.1"
+version = "1.2.0"
 authors = [
   { name="Nirajan Paudel", email="nirajanpaudel33@gmail.com" },
 ]
@@ -59,8 +59,8 @@ autodoc = "autodoc_ai.cli:main"
 # --- Tool's Configuration ---
 
 # This section is read by config.py module at runtime.
-[tool.autodoc]
-strategy = "groq"
+[tool.zenco]
+strategy = "llm"
 style = "google"
 overwrite_existing = false
 refactor = false 
