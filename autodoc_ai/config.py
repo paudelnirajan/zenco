@@ -27,7 +27,7 @@ def find_pyproject_toml(start_dir: str) -> Optional[str]:
 
 def load_config() -> Dict[str, Any]:
     """
-    Loads configuration from the [tool.autodoc] section of pyproject.toml.
+    Loads configuration from the [tool.zenco] section of pyproject.toml.
     """
     default_config = {
         "strategy": "mock",
@@ -44,8 +44,8 @@ def load_config() -> Dict[str, Any]:
         with open(toml_path, "rb") as f:
             # We use `tomllib` which is now an alias for either library
             full_config = tomllib.load(f)
-            autodoc_config = full_config.get("tool", {}).get("autodoc", {})
-            return {**default_config, **autodoc_config}
+            zenco_config = full_config.get("tool", {}).get("zenco", {})
+            return {**default_config, **zenco_config}
     except (tomllib.TOMLDecodeError, IOError) as e:
         print(f"Warning: Could not read or parse pyproject.toml: {e}")
         return default_config
