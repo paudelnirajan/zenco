@@ -69,7 +69,7 @@ The `zenco init` command will create this for you. Example:
 ```env
 GROQ_API_KEY="gsk_YourActualGroqApiKeyHere"
 GROQ_MODEL_NAME="llama3-8b-8192"
-AUTODOC_PROVIDER="groq"
+ZENCO_PROVIDER="groq"
 ```
 
 ## Usage Examples
