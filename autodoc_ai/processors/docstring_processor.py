@@ -19,7 +19,7 @@ class DocstringProcessor(BaseProcessor):
     """Generates docstrings for undocumented functions, skipping dead code."""
     
     def process(self, generator: Any, overwrite_existing: bool = False, 
-                dead_functions: Optional[Set[str]] = None) -> None:
+                dead_functions: Optional[Set[str]] = None, check_drift: bool = False) -> None:
         """
         Generate docstrings for functions, skipping dead code.
         
@@ -27,6 +27,7 @@ class DocstringProcessor(BaseProcessor):
             generator: Docstring generator instance
             overwrite_existing: Whether to improve existing docstrings
             dead_functions: Set of dead function names to skip
+            check_drift: Whether to check for docstring drift
         """
         dead_functions = dead_functions or set()
         
@@ -65,12 +66,15 @@ class DocstringProcessor(BaseProcessor):
                 self._generate_docstring_for_function(func_node, func_name, generator)
                 processed_count += 1
         
-        # Process existing docstrings if overwrite is enabled
-        if overwrite_existing:
+        # Process existing docstrings if overwrite is enabled OR drift check is enabled
+        if overwrite_existing or check_drift:
             improved_count = self._improve_existing_docstrings(
-                documented_nodes, generator, dead_functions
+                documented_nodes, generator, dead_functions, 
+                check_drift=check_drift,
+                overwrite_existing=overwrite_existing
             )
-            print(f"  [DOC] Improved {improved_count} existing docstring(s)")
+            if improved_count > 0:
+                print(f"  [DOC] Improved/Fixed {improved_count} existing docstring(s)")
         
         if skipped_count > 0:
             print(f"  [DOC] Processed {processed_count} functions, skipped {skipped_count} dead functions")
@@ -182,9 +186,89 @@ class DocstringProcessor(BaseProcessor):
             new_text=formatted_docstring
         )
     
+    def _check_drift(self, func_node: Any, docstring: str) -> bool:
+        """
+        Check if docstring has drifted from code (heuristic check).
+        Returns True if drift is detected.
+        """
+        import re
+        
+        # 1. Extract parameters from code
+        code_params = set()
+        params_node = func_node.child_by_field_name('parameters')
+        if params_node:
+            for child in params_node.children:
+                if child.type in ('identifier', 'typed_parameter', 'default_parameter', 'typed_default_parameter'):
+                    # Extract name based on node type
+                    if child.type == 'identifier':
+                        code_params.add(child.text.decode('utf8'))
+                    elif child.type == 'typed_parameter':
+                        name_node = child.child_by_field_name('name') or child.children[0]
+                        code_params.add(name_node.text.decode('utf8'))
+                    elif child.type == 'default_parameter':
+                        name_node = child.child_by_field_name('name') or child.children[0]
+                        code_params.add(name_node.text.decode('utf8'))
+                    elif child.type == 'typed_default_parameter':
+                        name_node = child.child_by_field_name('name') or child.children[0]
+                        code_params.add(name_node.text.decode('utf8'))
+        
+        # Remove 'self' or 'cls' for methods
+        code_params.discard('self')
+        code_params.discard('cls')
+        
+        # 2. Extract parameters from docstring (Heuristic)
+        doc_params = set()
+        
+        # Google Style: Args: \n param (type): desc
+        google_matches = re.findall(r'^\s*(\w+)\s*\(.*?\):\s', docstring, re.MULTILINE)
+        doc_params.update(google_matches)
+        
+        # NumPy Style: param : type
+        # We need to be careful not to match section headers like 'Args:', 'Parameters:', etc.
+        # A simple heuristic: section headers usually don't have a type definition on the same line in NumPy style,
+        # OR they are one of the standard headers.
+        
+        numpy_potential = re.findall(r'^\s*(\w+)\s*:\s', docstring, re.MULTILINE)
+        ignore_headers = {'Args', 'Arguments', 'Parameters', 'Returns', 'Yields', 'Raises', 'Attributes', 'Example', 'Examples', 'Note', 'Notes', 'Todo'}
+        
+        for match in numpy_potential:
+            if match not in ignore_headers:
+                doc_params.add(match)
+        
+        # Sphinx/Epytext: :param name: desc or @param name: desc
+        sphinx_matches = re.findall(r'[:@]param\s+(\w+)', docstring)
+        doc_params.update(sphinx_matches)
+        
+        # 3. Compare
+        # If docstring has no params but code does, it might just be a summary docstring (acceptable?)
+        # Let's be strict: if docstring mentions ANY params, it must match code params.
+        if not doc_params and code_params:
+            # If code has params but docstring mentions none, it's a weak signal (could be summary only).
+            # But if we want "Smart" drift detection, we might flag this if it's a long function.
+            # For now, let's only flag if there is an INTERSECTION mismatch (documented params don't match code params)
+            return False
+            
+        if doc_params:
+            # Check for missing params in docstring
+            missing_in_doc = code_params - doc_params
+            # Check for extra params in docstring (deleted from code)
+            extra_in_doc = doc_params - code_params
+            
+            if missing_in_doc or extra_in_doc:
+                print(f"  [DRIFT] Parameter mismatch for function.")
+                if missing_in_doc:
+                    print(f"    - Missing in doc: {', '.join(missing_in_doc)}")
+                if extra_in_doc:
+                    print(f"    - Extra in doc: {', '.join(extra_in_doc)}")
+                return True
+                
+        return False
+
     def _improve_existing_docstrings(self, documented_nodes: Dict[Any, Any], 
-                                    generator: Any, dead_functions: Set[str]) -> int:
-        """Improve existing docstrings that are low quality."""
+                                    generator: Any, dead_functions: Set[str],
+                                    check_drift: bool = False,
+                                    overwrite_existing: bool = False) -> int:
+        """Improve existing docstrings that are low quality or drifted."""
         improved_count = 0
         
         for func_node, doc_node in documented_nodes.items():
@@ -195,13 +279,24 @@ class DocstringProcessor(BaseProcessor):
                 continue
             
             docstring_text = doc_node.text.decode('utf8')
-            is_good = generator.evaluate(func_node, docstring_text)
             
-            if not is_good:
-                name_node = func_node.child_by_field_name('name')
-                func_name = name_node.text.decode('utf8') if name_node else 'unknown'
-                print(f"  [IMPROVE] Line {doc_node.start_point[0]+1}: Improving docstring for `{func_name}()` (low quality detected)")
-                
+            # Check for drift if requested
+            is_drifted = False
+            if check_drift:
+                is_drifted = self._check_drift(func_node, docstring_text)
+                if is_drifted:
+                    print(f"  [DRIFT] Line {doc_node.start_point[0]+1}: Detected drift for `{func_name}()`")
+            
+            # If drifted, we force regeneration. If not, we check quality ONLY if overwrite is enabled.
+            should_regenerate = is_drifted
+            
+            if not should_regenerate and overwrite_existing:
+                is_good = generator.evaluate(func_node, docstring_text)
+                if not is_good:
+                    print(f"  [IMPROVE] Line {doc_node.start_point[0]+1}: Improving docstring for `{func_name}()` (low quality detected)")
+                    should_regenerate = True
+            
+            if should_regenerate:
                 new_docstring = generator.generate(func_node)
                 
                 try:

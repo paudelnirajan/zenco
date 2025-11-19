@@ -20,6 +20,7 @@ This project was built on a foundation of solid Object-Oriented Programming prin
 
 ### AI-Powered Code Enhancement
 *   **Docstring Generation:** Context-aware docstrings for functions and classes
+*   **Docstring Drift Detection:** Identifies when docstrings are out of sync with code (parameter mismatches)
 *   **Type Hint Addition:** Intelligent type annotations for Python functions
 *   **Magic Number Detection:** Identifies and replaces numeric literals with named constants
 *   **Dead Code Removal:** Detects and removes unused imports, variables, and functions
@@ -96,6 +97,9 @@ zenco run . --add-type-hints --in-place
 
 # Fix magic numbers across languages
 zenco run . --fix-magic-numbers --in-place
+
+# Check for docstring drift (parameter mismatches)
+zenco run . --check-drift --in-place
 
 # Remove dead code (safe mode)
 zenco run . --dead-code --in-place

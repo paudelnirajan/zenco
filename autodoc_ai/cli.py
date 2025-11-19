@@ -187,7 +187,7 @@ def init_config():
     print(f"\n{'='*70}\n")
 
 
-def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool, overwrite_existing: bool, add_type_hints: bool = False, fix_magic_numbers: bool = False, docstrings_enabled: bool = False, dead_code: bool = False, dead_code_strict: bool = False):
+def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool, overwrite_existing: bool, add_type_hints: bool = False, fix_magic_numbers: bool = False, docstrings_enabled: bool = False, dead_code: bool = False, dead_code_strict: bool = False, check_drift: bool = False):
     """
     Processes a single file using the Tree-sitter engine to find and
     report undocumented functions, add type hints, and fix magic numbers.
@@ -247,7 +247,8 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
             docstring_processor.process(
                 generator=generator,
                 overwrite_existing=overwrite_existing,
-                dead_functions=dead_function_names
+                dead_functions=dead_function_names,
+                check_drift=check_drift
             )
         except Exception as e:
             print(f"  [ERROR] Docstring processing failed: {e}")
@@ -334,7 +335,7 @@ def run_autodoc(args):
         cprint("   This will configure your API key and enable real AI-powered analysis.\n", 'yellow')
     
     # Determine which features are enabled (opt-in)
-    docstrings_enabled = getattr(args, 'docstrings', False) or getattr(args, 'overwrite_existing', False)
+    docstrings_enabled = getattr(args, 'docstrings', False) or getattr(args, 'overwrite_existing', False) or getattr(args, 'check_drift', False)
     hints_enabled = getattr(args, 'add_type_hints', False)
     magic_enabled = getattr(args, 'fix_magic_numbers', False)
     dead_code_enabled = getattr(args, 'dead_code', False)
@@ -433,6 +434,7 @@ def run_autodoc(args):
             docstrings_enabled=docstrings_enabled,
             dead_code=dead_code_enabled,
             dead_code_strict=dead_code_strict_enabled,
+            check_drift=getattr(args, 'check_drift', False),
         )
         print(f"{'-'*70}\n")
     
@@ -503,6 +505,7 @@ For more help: https://github.com/paudelnirajan/zenco
         description="""
 Analyze source code files and apply AI-powered improvements:
   * Generate missing docstrings
+  * Check for docstring drift (parameter mismatches)
   * Add type hints to functions
   * Improve existing documentation
   * Refactor poorly named variables/functions
@@ -517,6 +520,9 @@ Examples:
 
   # Add type hints to entire project
   zenco run . --add-type-hints --in-place
+
+  # Check for docstring drift (parameter mismatches)
+  zenco run . --check-drift --in-place
 
   # Process only Git-changed files
   zenco run . --diff --in-place
@@ -618,6 +624,12 @@ Examples:
         "--dead-code-strict",
         action="store_true",
         help="Strict mode: also delete never-called private functions (e.g., _helper) when used with --in-place (Python only)"
+    )
+
+    parser_run.add_argument(
+        "--check-drift",
+        action="store_true",
+        help="Check for docstring drift (mismatch between code and docs)"
     )
 
     parser_run.set_defaults(func=run_autodoc)
