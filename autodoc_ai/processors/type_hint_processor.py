@@ -10,7 +10,7 @@ from .base import BaseProcessor
 class TypeHintProcessor(BaseProcessor):
     """Adds type hints to Python functions, skipping dead code."""
     
-    def process(self, generator: Any, dead_functions: Optional[Set[str]] = None) -> None:
+    def process(self, generator: Any, dead_functions: Optional[Set[str]] = None):
         """
         Add type hints to functions, skipping dead code.
         
@@ -22,6 +22,7 @@ class TypeHintProcessor(BaseProcessor):
             return  # Type hints only for Python currently
         
         dead_functions = dead_functions or set()
+        changes = []
         typing_imports_needed = set()
         
         # Get all functions
@@ -87,6 +88,14 @@ class TypeHintProcessor(BaseProcessor):
                         )
                         typing_imports_needed.update(needed_imports)
                         processed_count += 1
+                        
+                        # Track the change
+                        changes.append({
+                            "type": "type_hint",
+                            "line": line_num,
+                            "function": func_name,
+                            "description": f"Added type hints for {func_name}()"
+                        })
                 
             except Exception as e:
                 print(f"  [ERROR] Adding type hints to `{func_name}`: {e}", flush=True)
@@ -98,6 +107,8 @@ class TypeHintProcessor(BaseProcessor):
         
         if skipped_count > 0:
             print(f"  [TYPE] Processed {processed_count} functions, skipped {skipped_count} dead functions")
+        
+        return changes
     
     def _build_new_signature(self, func_node: Any, func_name: str, 
                             type_hints: Dict[str, Any]) -> tuple:

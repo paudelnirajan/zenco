@@ -187,11 +187,33 @@ def init_config():
     print(f"\n{'='*70}\n")
 
 
-def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool, overwrite_existing: bool, add_type_hints: bool = False, fix_magic_numbers: bool = False, docstrings_enabled: bool = False, dead_code: bool = False, dead_code_strict: bool = False):
+def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, in_place: bool, overwrite_existing: bool, add_type_hints: bool = False, fix_magic_numbers: bool = False, docstrings_enabled: bool = False, dead_code: bool = False, dead_code_strict: bool = False, json_mode: bool = False):
     """
     Processes a single file using the Tree-sitter engine to find and
     report undocumented functions, add type hints, and fix magic numbers.
+    
+    Returns:
+        Dict[str, Any]: Processing results containing filepath, language, success status,
+                       original/modified content, changes list, stats, and error info.
+                       Returns None in non-JSON mode for backward compatibility.
     """
+    
+    # Initialize result structure for JSON mode
+    result = {
+        "filepath": filepath,
+        "language": None,
+        "success": False,
+        "original_content": "",
+        "modified_content": "",
+        "changes": [],
+        "stats": {
+            "docstrings_added": 0,
+            "type_hints_added": 0,
+            "magic_numbers_fixed": 0,
+            "dead_code_removed": 0
+        },
+        "error": None
+    }
 
     lang = None
     if filepath.endswith('.py'): lang = 'python'
@@ -200,18 +222,36 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     elif filepath.endswith('.go'): lang = 'go'
     elif filepath.endswith('.cpp') or filepath.endswith('.hpp') or filepath.endswith('.h'): lang = 'cpp'
 
+    result["language"] = lang
+
     parser = get_language_parser(lang)
-    if not parser: return
+    if not parser:
+        if json_mode:
+            result["error"] = f"No parser available for language: {lang}"
+            return result
+        return
     
     # Get the language object for Query constructor
     language = LANGUAGES.get(lang)
-    if not language: return
+    if not language:
+        if json_mode:
+            result["error"] = f"Language not supported: {lang}"
+            return result
+        return
 
     try:
         with open(filepath, 'rb') as f:
             source_bytes = f.read()
     except IOError as e:
-        print(f"Error reading file: {e}"); return
+        error_msg = f"Error reading file: {e}"
+        if json_mode:
+            result["error"] = error_msg
+            return result
+        print(error_msg)
+        return
+
+    # Store original content
+    result["original_content"] = source_bytes.decode('utf-8')
 
     tree = parser.parse(source_bytes)
     transformer = CodeTransformer(source_bytes)
@@ -228,90 +268,162 @@ def process_file_with_treesitter(filepath: str, generator: IDocstringGenerator, 
     
     dead_function_names = set()
     
+    # Context manager to suppress stdout in JSON mode
+    from contextlib import contextmanager
+    import sys
+    import os
+
+    @contextmanager
+    def suppress_stdout():
+        if json_mode:
+            with open(os.devnull, "w") as devnull:
+                old_stdout = sys.stdout
+                sys.stdout = devnull
+                try:
+                    yield
+                finally:
+                    sys.stdout = old_stdout
+        else:
+            yield
+
     # Step 1: Detect dead code FIRST (execution priority optimization)
     if dead_code:
         try:
-            dead_processor = DeadCodeProcessor(lang, tree, source_bytes, transformer)
-            dead_function_names = dead_processor.process(in_place=in_place, strict=dead_code_strict)
+            with suppress_stdout():
+                dead_processor = DeadCodeProcessor(lang, tree, source_bytes, transformer)
+                dead_function_names = dead_processor.process(in_place=in_place, strict=dead_code_strict)
+            
             if dead_function_names:
-                print(f"  [PRIORITY] Found {len(dead_function_names)} dead functions to skip in other processors")
+                result["stats"]["dead_code_removed"] = len(dead_function_names)
+                for func_name in dead_function_names:
+                    result["changes"].append({
+                        "type": "dead_code",
+                        "function": func_name,
+                        "description": f"Removed dead function: {func_name}"
+                    })
+                if not json_mode:
+                    print(f"  [PRIORITY] Found {len(dead_function_names)} dead functions to skip in other processors")
         except Exception as e:
-            print(f"  [WARN] Dead code detection failed: {e}")
-            import traceback
-            traceback.print_exc()
+            error_msg = f"Dead code detection failed: {e}"
+            if not json_mode:
+                print(f"  [WARN] {error_msg}")
+                import traceback
+                traceback.print_exc()
     
     # Step 2: Generate docstrings (skipping dead code)
     if docstrings_enabled:
         try:
-            docstring_processor = DocstringProcessor(lang, tree, source_bytes, transformer)
-            docstring_processor.process(
-                generator=generator,
-                overwrite_existing=overwrite_existing,
-                dead_functions=dead_function_names
-            )
+            with suppress_stdout():
+                docstring_processor = DocstringProcessor(lang, tree, source_bytes, transformer)
+                docstring_changes = docstring_processor.process(
+                    generator=generator,
+                    overwrite_existing=overwrite_existing,
+                    dead_functions=dead_function_names
+                )
+            
+            if docstring_changes:
+                result["changes"].extend(docstring_changes)
+                result["stats"]["docstrings_added"] = len(docstring_changes)
+                
         except Exception as e:
-            print(f"  [ERROR] Docstring processing failed: {e}")
-            import traceback
-            traceback.print_exc()
+            error_msg = f"Docstring processing failed: {e}"
+            if not json_mode:
+                print(f"  [ERROR] {error_msg}")
+                import traceback
+                traceback.print_exc()
     
     # Step 3: Add type hints (skipping dead code)
     if add_type_hints:
         try:
-            type_hint_processor = TypeHintProcessor(lang, tree, source_bytes, transformer)
-            type_hint_processor.process(
-                generator=generator,
-                dead_functions=dead_function_names
-            )
+            with suppress_stdout():
+                type_hint_processor = TypeHintProcessor(lang, tree, source_bytes, transformer)
+                type_hint_changes = type_hint_processor.process(
+                    generator=generator,
+                    dead_functions=dead_function_names
+                )
+            
+            if type_hint_changes:
+                result["changes"].extend(type_hint_changes)
+                result["stats"]["type_hints_added"] = len(type_hint_changes)
+                
         except Exception as e:
-            print(f"  [ERROR] Type hint processing failed: {e}")
-            import traceback
-            traceback.print_exc()
+            error_msg = f"Type hint processing failed: {e}"
+            if not json_mode:
+                print(f"  [ERROR] {error_msg}")
+                import traceback
+                traceback.print_exc()
     
     # Step 4: Replace magic numbers (skipping dead code)
     if fix_magic_numbers:
         try:
-            magic_number_processor = MagicNumberProcessor(lang, tree, source_bytes, transformer)
-            magic_number_processor.process(
-                generator=generator,
-                dead_functions=dead_function_names
-            )
+            with suppress_stdout():
+                magic_number_processor = MagicNumberProcessor(lang, tree, source_bytes, transformer)
+                magic_changes = magic_number_processor.process(
+                    generator=generator,
+                    dead_functions=dead_function_names
+                )
+            
+            if magic_changes:
+                result["changes"].extend(magic_changes)
+                result["stats"]["magic_numbers_fixed"] = len(magic_changes)
+                
         except Exception as e:
-            print(f"  [ERROR] Magic number processing failed: {e}")
-            import traceback
-            traceback.print_exc()
+            error_msg = f"Magic number processing failed: {e}"
+            if not json_mode:
+                print(f"  [ERROR] {error_msg}")
+                import traceback
+                traceback.print_exc()
     
     # ============================================================================
     # Apply all transformations and save/preview
     # ============================================================================
     new_code = transformer.apply_changes()
+    result["modified_content"] = new_code.decode('utf-8')
+    result["success"] = True
+    
     if in_place:
         if new_code != source_bytes:
-            print("\n  [SAVE] Saving changes to file...")
+            if not json_mode:
+                print("\n  [SAVE] Saving changes to file...")
             try:
                 with open(filepath, 'wb') as f:
                     f.write(new_code)
-                print("  [OK] File updated successfully!")
+                if not json_mode:
+                    print("  [OK] File updated successfully!")
             except IOError as e:
-                print(f"  [ERROR] Error writing to file: {e}")
+                error_msg = f"Error writing to file: {e}"
+                if not json_mode:
+                    print(f"  [ERROR] {error_msg}")
+                result["error"] = error_msg
+                result["success"] = False
         else:
-            print("\n  [INFO] No changes needed for this file.")
+            if not json_mode:
+                print("\n  [INFO] No changes needed for this file.")
     else:
-        # Print to console if not in_place
-        print("\n  [PREVIEW] Preview of Changes (Dry Run):")
-        print(f"  {'-'*66}\n")
-        print(new_code.decode('utf8'))
+        # Print to console if not in_place and not in json_mode
+        if not json_mode:
+            print("\n  [PREVIEW] Preview of Changes (Dry Run):")
+            print(f"  {'-'*66}\n")
+            print(new_code.decode('utf8'))
+    
+    return result if json_mode else None
+
 
 
 def run_autodoc(args):
     """The main entry point for running the analysis."""
-    if RICH_AVAILABLE:
-        console = Console()
-        console.print(Panel.fit("Zenco AI - Code Analysis & Enhancement", 
-                               border_style="blue", padding=(1, 2)))
-    else:
-        cprint(f"\n{'='*70}", 'cyan')
-        cprint(f"  Zenco AI - Code Analysis & Enhancement", 'blue', 'bold')
-        cprint(f"{'='*70}\n", 'cyan')
+    # Detect JSON mode early to suppress all non-JSON output
+    json_mode = getattr(args, 'json', False)
+    
+    if not json_mode:
+        if RICH_AVAILABLE:
+            console = Console()
+            console.print(Panel.fit("Zenco AI - Code Analysis & Enhancement", 
+                                   border_style="blue", padding=(1, 2)))
+        else:
+            cprint(f"\n{'='*70}", 'cyan')
+            cprint(f"  Zenco AI - Code Analysis & Enhancement", 'blue', 'bold')
+            cprint(f"{'='*70}\n", 'cyan')
     
     # Check if this is first-time use and show helpful setup message
     dotenv_path = Path(os.getcwd()) / '.env'
@@ -329,7 +441,7 @@ def run_autodoc(args):
         os.getenv("GEMINI_API_KEY")
     ])
     
-    if not dotenv_path.exists() or not has_api_keys:
+    if not json_mode and (not dotenv_path.exists() or not has_api_keys):
         cprint("First time using Zenco? Run 'zenco init' to set up your AI provider!", 'yellow', 'bold')
         cprint("   This will configure your API key and enable real AI-powered analysis.\n", 'yellow')
     
@@ -363,49 +475,58 @@ def run_autodoc(args):
         features.append("Magic Number Replacement")
     if dead_code_enabled:
         features.append("Dead Code")
-    if refactor_enabled or refactor_strict_enabled:
-        # Print umbrella banner explicitly listing what refactor mode enables
-        umbrella = ["Docstrings", "Type Hints", "Magic Numbers", "Dead Code"]
-        if refactor_strict_enabled:
-            umbrella.append("Strict Dead Code")
-        cprint(f"[REFACTOR] Refactor mode enabled -> {', '.join(umbrella)}", 'green')
+    if not json_mode:
+        if refactor_enabled or refactor_strict_enabled:
+            # Print umbrella banner explicitly listing what refactor mode enables
+            umbrella = ["Docstrings", "Type Hints", "Magic Numbers", "Dead Code"]
+            if refactor_strict_enabled:
+                umbrella.append("Strict Dead Code")
+            cprint(f"[REFACTOR] Refactor mode enabled -> {', '.join(umbrella)}", 'green')
 
     if not any([docstrings_enabled, hints_enabled, magic_enabled, dead_code_enabled]):
-        cprint("[WARN]  No features selected. Use one or more of: --docstrings, --overwrite-existing, --add-type-hints, --fix-magic-numbers, --dead-code, --dead-code-strict, --refactor, --refactor-strict", 'yellow')
+        if not json_mode:
+            cprint("[WARN]  No features selected. Use one or more of: --docstrings, --overwrite-existing, --add-type-hints, --fix-magic-numbers, --dead-code, --dead-code-strict, --refactor, --refactor-strict", 'yellow')
         return
     
-    print(f"[FEATURES] Active Features: {', '.join(features)}")
-    print(f"[STYLE] Docstring Style: {args.style}")
+    if not json_mode:
+        print(f"[FEATURES] Active Features: {', '.join(features)}")
+        print(f"[STYLE] Docstring Style: {args.style}")
     
     if args.diff:
-        print(f"[MODE] Git-changed files only\n")
-        print("Scanning for modified files...")
+        if not json_mode:
+            print(f"[MODE] Git-changed files only\n")
+            print("Scanning for modified files...")
         source_files = get_git_changed_files()
         if source_files is None: 
-            print("[ERROR] Error: Not a git repository or no changes found.")
+            if not json_mode:
+                print("[ERROR] Error: Not a git repository or no changes found.")
             sys.exit(1)
     else:
-        print(f"[TARGET] Target: {args.path}\n")
-        print("Scanning for source files...")
+        if not json_mode:
+            print(f"[TARGET] Target: {args.path}\n")
+            print("Scanning for source files...")
         source_files = get_source_files(args.path)
     
     if not source_files:
-        print("\n[WARN]  No source files found to process.")
-        print("[TIP] Tip: Make sure you're in the right directory or specify a path.")
+        if not json_mode:
+            print("\n[WARN]  No source files found to process.")
+            print("[TIP] Tip: Make sure you're in the right directory or specify a path.")
         return
 
-    print(f"[OK] Found {len(source_files)} file(s) to process.\n")
+    if not json_mode:
+        print(f"[OK] Found {len(source_files)} file(s) to process.\n")
     
     # Show provider info
-    provider = getattr(args, 'provider', None) or os.getenv('ZENCO_PROVIDER', 'groq')
-    model = getattr(args, 'model', None)
-    if args.strategy != 'mock':
-        print(f"[AI] Using: {provider.upper()}" + (f" ({model})" if model else ""))
-        if not args.in_place:
-            print(f"  Mode: Dry-run (preview only - use --in-place to save changes)")
-        else:
-            print(f"  Mode: In-place (files will be modified)")
-        print()
+    if not json_mode:
+        provider = getattr(args, 'provider', None) or os.getenv('ZENCO_PROVIDER', 'groq')
+        model = getattr(args, 'model', None)
+        if args.strategy != 'mock':
+            print(f"[AI] Using: {provider.upper()}" + (f" ({model})" if model else ""))
+            if not args.in_place:
+                print(f"  Mode: Dry-run (preview only - use --in-place to save changes)")
+            else:
+                print(f"  Mode: In-place (files will be modified)")
+            print()
     
     try:
         generator = GeneratorFactory.create_generator(
@@ -415,37 +536,87 @@ def run_autodoc(args):
             getattr(args, 'model', None),
         )
     except ValueError as e:
-        print(f"[ERROR] Error: {e}")
-        print(f"[TIP] Tip: Run 'zenco init' to configure your provider.")
+        if not json_mode:
+            print(f"[ERROR] Error: {e}")
+            print(f"[TIP] Tip: Run 'zenco init' to configure your provider.")
         sys.exit(1)
 
-    print(f"{'-'*70}\n")
-    
-    for i, filepath in enumerate(source_files, 1):
-        print(f"[{i}/{len(source_files)}] Processing: {filepath}")
-        process_file_with_treesitter(
-            filepath=filepath,
-            generator=generator,
-            in_place=args.in_place,
-            overwrite_existing=args.overwrite_existing,
-            add_type_hints=hints_enabled,
-            fix_magic_numbers=magic_enabled,
-            docstrings_enabled=docstrings_enabled,
-            dead_code=dead_code_enabled,
-            dead_code_strict=dead_code_strict_enabled,
-        )
+    if not json_mode:
         print(f"{'-'*70}\n")
     
-    # Summary
-    print(f"{'='*70}")
-    print(f"  [OK] Processing Complete!")
-    print(f"{'='*70}")
-    print(f"\nSummary:")
-    print(f"  * Files processed: {len(source_files)}")
-    print(f"  * Mode: {'Modified files' if args.in_place else 'Preview only'}")
-    if not args.in_place:
-        print(f"\nTo apply changes, add the --in-place flag")
-    print(f"\n{'='*70}\n")
+    # Detect JSON mode
+    json_mode = getattr(args, 'json', False)
+    
+    if json_mode:
+        # Import JSONOutput for JSON mode
+        from autodoc_ai.json_output import JSONOutput
+        json_output = JSONOutput()
+        
+        # Process files and collect results
+        for i, filepath in enumerate(source_files, 1):
+            try:
+                result = process_file_with_treesitter(
+                    filepath=filepath,
+                    generator=generator,
+                    in_place=args.in_place,
+                    overwrite_existing=args.overwrite_existing,
+                    add_type_hints=hints_enabled,
+                    fix_magic_numbers=magic_enabled,
+                    docstrings_enabled=docstrings_enabled,
+                    dead_code=dead_code_enabled,
+                    dead_code_strict=dead_code_strict_enabled,
+                    json_mode=True
+                )
+                
+                # Add result to JSON output
+                json_output.add_file_result(
+                    filepath=result["filepath"],
+                    language=result["language"],
+                    success=result["success"],
+                    original_content=result["original_content"],
+                    modified_content=result["modified_content"],
+                    changes=result["changes"],
+                    stats=result["stats"],
+                    error=result.get("error")
+                )
+            except Exception as e:
+                # Handle unexpected errors
+                json_output.add_error(
+                    error_type="ProcessingError",
+                    message=str(e),
+                    file=filepath
+                )
+        
+        # Output JSON results
+        json_output.output(mode="refactor", in_place=args.in_place)
+    else:
+        # Normal text output mode
+        for i, filepath in enumerate(source_files, 1):
+            print(f"[{i}/{len(source_files)}] Processing: {filepath}")
+            process_file_with_treesitter(
+                filepath=filepath,
+                generator=generator,
+                in_place=args.in_place,
+                overwrite_existing=args.overwrite_existing,
+                add_type_hints=hints_enabled,
+                fix_magic_numbers=magic_enabled,
+                docstrings_enabled=docstrings_enabled,
+                dead_code=dead_code_enabled,
+                dead_code_strict=dead_code_strict_enabled,
+                json_mode=False
+            )
+            print(f"{'-'*70}\n")
+        
+        # Summary (only in text mode)
+        print(f"{'='*70}")
+        print(f"  [OK] Processing Complete!")
+        print(f"{'='*70}")
+        print(f"\nSummary:")
+        print(f"  * Files processed: {len(source_files)}")
+        print(f"  * Mode: {'Modified files' if args.in_place else 'Preview only'}")
+        if not args.in_place:
+            print(f"\nTo apply changes, add the --in-place flag")
+        print(f"\n{'='*70}\n")
 
 
 def main():
@@ -618,6 +789,12 @@ Examples:
         "--dead-code-strict",
         action="store_true",
         help="Strict mode: also delete never-called private functions (e.g., _helper) when used with --in-place (Python only)"
+    )
+
+    parser_run.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON format (for programmatic use)"
     )
 
     parser_run.set_defaults(func=run_autodoc)

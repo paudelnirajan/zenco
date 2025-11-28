@@ -146,26 +146,16 @@ class DeadCodeProcessor(BaseProcessor):
     
     def _process_javascript(self, in_place: bool, strict: bool) -> Set[str]:
         """JavaScript dead code detection - simplified version."""
-        # Similar logic but using tree-sitter nodes
-        # Return set of dead function names
-        print("\n  [CLEANUP] Dead Code Report (JavaScript):")
-        print("  • Dead code detection for JavaScript (basic implementation)")
         return set()
     
     def _process_java(self, in_place: bool, strict: bool) -> Set[str]:
         """Java dead code detection - simplified version."""
-        print("\n  [CLEANUP] Dead Code Report (Java):")
-        print("  • Dead code detection for Java (basic implementation)")
         return set()
     
     def _process_go(self, in_place: bool, strict: bool) -> Set[str]:
         """Go dead code detection - simplified version."""
-        print("\n  [CLEANUP] Dead Code Report (Go):")
-        print("  • Dead code detection for Go (basic implementation)")
         return set()
     
     def _process_cpp(self, in_place: bool, strict: bool) -> Set[str]:
         """C++ dead code detection - simplified version."""
-        print("\n  [CLEANUP] Dead Code Report (C++):")
-        print("  • Dead code detection for C++ (basic implementation)")
         return set()
