@@ -10,7 +10,7 @@ from .base import BaseProcessor
 class MagicNumberProcessor(BaseProcessor):
     """Replaces magic numbers with named constants, skipping dead code."""
     
-    def process(self, generator: Any, dead_functions: Optional[Set[str]] = None) -> None:
+    def process(self, generator: Any, dead_functions: Optional[Set[str]] = None):
         """
         Replace magic numbers with constants, skipping dead code.
         
@@ -19,19 +19,22 @@ class MagicNumberProcessor(BaseProcessor):
             dead_functions: Set of dead function names to skip
         """
         dead_functions = dead_functions or set()
+        changes = []
         
         if self.lang == 'python':
-            self._process_python(generator, dead_functions)
+            changes = self._process_python(generator, dead_functions)
         elif self.lang == 'javascript':
-            self._process_javascript(generator, dead_functions)
+            changes = self._process_javascript(generator, dead_functions)
         elif self.lang == 'java':
-            self._process_java(generator, dead_functions)
+            changes = self._process_java(generator, dead_functions)
         elif self.lang == 'go':
-            self._process_go(generator, dead_functions)
+            changes = self._process_go(generator, dead_functions)
         elif self.lang == 'cpp':
-            self._process_cpp(generator, dead_functions)
+            changes = self._process_cpp(generator, dead_functions)
+        
+        return changes
     
-    def _process_python(self, generator: Any, dead_functions: Set[str]) -> None:
+    def _process_python(self, generator: Any, dead_functions: Set[str]):
         """Process Python magic numbers."""
         # Find numeric literals
         def find_numeric_literals(node):
@@ -87,8 +90,11 @@ class MagicNumberProcessor(BaseProcessor):
         # Add constants at module level
         if constants_to_add:
             self._add_python_constants(constants_to_add)
+        
+        # Return changes
+        return self._build_changes_from_replacements(replacements)
     
-    def _process_javascript(self, generator: Any, dead_functions: Set[str]) -> None:
+    def _process_javascript(self, generator: Any, dead_functions: Set[str]):
         """Process JavaScript magic numbers."""
         def find_js_numbers(node):
             results = []
@@ -130,8 +136,10 @@ class MagicNumberProcessor(BaseProcessor):
         
         if constants_to_add:
             self._add_javascript_constants(constants_to_add)
+        
+        return self._build_changes_from_replacements(replacements)
     
-    def _process_java(self, generator: Any, dead_functions: Set[str]) -> None:
+    def _process_java(self, generator: Any, dead_functions: Set[str]):
         """Process Java magic numbers."""
         def find_java_numbers(node):
             results = []
@@ -171,8 +179,10 @@ class MagicNumberProcessor(BaseProcessor):
         
         if constants_to_add:
             self._add_java_constants(constants_to_add)
+        
+        return self._build_changes_from_replacements(replacements)
     
-    def _process_go(self, generator: Any, dead_functions: Set[str]) -> None:
+    def _process_go(self, generator: Any, dead_functions: Set[str]):
         """Process Go magic numbers."""
         def find_go_numbers(node):
             results = []
@@ -212,8 +222,10 @@ class MagicNumberProcessor(BaseProcessor):
         
         if constants_to_add:
             self._add_go_constants(constants_to_add)
+        
+        return self._build_changes_from_replacements(replacements)
     
-    def _process_cpp(self, generator: Any, dead_functions: Set[str]) -> None:
+    def _process_cpp(self, generator: Any, dead_functions: Set[str]):
         """Process C++ magic numbers."""
         def find_cpp_numbers(node):
             results = []
@@ -253,6 +265,8 @@ class MagicNumberProcessor(BaseProcessor):
         
         if constants_to_add:
             self._add_cpp_constants(constants_to_add)
+        
+        return self._build_changes_from_replacements(replacements)
     
     def _generate_replacements(self, magic_numbers: Dict, generator: Any) -> Tuple[List, List]:
         """Generate constant names and replacement list."""
@@ -288,6 +302,21 @@ class MagicNumberProcessor(BaseProcessor):
                 end_byte=node.end_byte,
                 new_text=constant_name
             )
+    
+    def _build_changes_from_replacements(self, replacements: List) -> List:
+        """Build changes list from replacements."""
+        changes = []
+        for node, constant_name in replacements:
+            line_num = node.start_point[0] + 1
+            value = node.text.decode('utf8')
+            changes.append({
+                "type": "magic_number",
+                "line": line_num,
+                "constant_name": constant_name,
+                "original_value": value,
+                "description": f"Replaced {value} with {constant_name}"
+            })
+        return changes
     
     def _add_python_constants(self, constants_to_add: List) -> None:
         """Add constants at module level for Python."""

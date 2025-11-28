@@ -9,3 +9,4 @@
 * [] one source of truth :: check for comments and are they on-par with code??
 * [] for typehints, if some typehints present, app donot help them complete, it does not do anything, if incmplete, should complete it
 * [] reformatting the code in file (all PL)
+* [] Implement logger project wide

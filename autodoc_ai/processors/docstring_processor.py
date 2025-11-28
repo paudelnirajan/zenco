@@ -19,7 +19,7 @@ class DocstringProcessor(BaseProcessor):
     """Generates docstrings for undocumented functions, skipping dead code."""
     
     def process(self, generator: Any, overwrite_existing: bool = False, 
-                dead_functions: Optional[Set[str]] = None) -> None:
+                dead_functions: Optional[Set[str]] = None):
         """
         Generate docstrings for functions, skipping dead code.
         
@@ -28,6 +28,7 @@ class DocstringProcessor(BaseProcessor):
             overwrite_existing: Whether to improve existing docstrings
             dead_functions: Set of dead function names to skip
         """
+        changes = []
         dead_functions = dead_functions or set()
         
         # Get all functions
@@ -62,21 +63,31 @@ class DocstringProcessor(BaseProcessor):
                 continue
             
             if func_name:
-                self._generate_docstring_for_function(func_node, func_name, generator)
+                change = self._generate_docstring_for_function(func_node, func_name, generator)
+                if change:
+                    changes.append(change)
                 processed_count += 1
         
         # Process existing docstrings if overwrite is enabled
         if overwrite_existing:
-            improved_count = self._improve_existing_docstrings(
+            improved_changes = self._improve_existing_docstrings(
                 documented_nodes, generator, dead_functions
             )
+            changes.extend(improved_changes)
+            improved_count = len(improved_changes)
             print(f"  [DOC] Improved {improved_count} existing docstring(s)")
         
         if skipped_count > 0:
             print(f"  [DOC] Processed {processed_count} functions, skipped {skipped_count} dead functions")
+        
+        return changes
     
-    def _generate_docstring_for_function(self, func_node: Any, func_name: str, generator: Any) -> None:
-        """Generate and insert docstring for a single function."""
+    def _generate_docstring_for_function(self, func_node: Any, func_name: str, generator: Any):
+        """Generate and insert docstring for a single function.
+        
+        Returns:
+            dict: Change metadata if successful, None otherwise
+        """
         name_node = func_node.child_by_field_name('name')
         if not name_node:
             # For C++, check declarator
@@ -88,7 +99,7 @@ class DocstringProcessor(BaseProcessor):
                         break
         
         if not name_node:
-            return
+            return None
         
         line_num = name_node.start_point[0] + 1
         print(f"  [DOC] Line {line_num}: Generating docstring for `{func_name}()`", flush=True)
@@ -100,6 +111,14 @@ class DocstringProcessor(BaseProcessor):
             self._insert_python_docstring(func_node, docstring)
         else:
             self._insert_other_language_docstring(func_node, docstring)
+        
+        # Return change metadata
+        return {
+            "type": "docstring",
+            "line": line_num,
+            "function": func_name,
+            "description": f"Added docstring for {func_name}()"
+        }
     
     def _insert_python_docstring(self, func_node: Any, docstring: str) -> None:
         """Insert docstring for Python function."""
@@ -183,9 +202,13 @@ class DocstringProcessor(BaseProcessor):
         )
     
     def _improve_existing_docstrings(self, documented_nodes: Dict[Any, Any], 
-                                    generator: Any, dead_functions: Set[str]) -> int:
-        """Improve existing docstrings that are low quality."""
-        improved_count = 0
+                                    generator: Any, dead_functions: Set[str]):
+        """Improve existing docstrings that are low quality.
+        
+        Returns:
+            list: List of change metadata dicts
+        """
+        changes = []
         
         for func_node, doc_node in documented_nodes.items():
             func_name = self.get_function_name(func_node)
@@ -218,8 +241,13 @@ class DocstringProcessor(BaseProcessor):
                         end_byte=doc_node.end_byte,
                         new_text=formatted_docstring
                     )
-                    improved_count += 1
+                    changes.append({
+                        "type": "docstring",
+                        "line": doc_node.start_point[0] + 1,
+                        "function": func_name,
+                        "description": f"Improved docstring for {func_name}()"
+                    })
                 except Exception as e:
                     print(f"  [ERROR] Improving docstring failed: {e}", flush=True)
         
-        return improved_count
+        return changes
