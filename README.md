@@ -116,6 +116,23 @@ zenco run . --refactor --in-place
 zenco run . --refactor-strict --in-place
 ```
 
+### JSON Output Mode
+```bash
+# Get structured JSON output for IDE/extension integration
+zenco run myfile.py --docstrings --json
+
+# JSON output includes: filepath, language, changes, stats, and error information
+zenco run . --refactor --json --in-place
+```
+
+The `--json` flag outputs structured data suitable for programmatic consumption, including:
+- File processing results with success status
+- Original and modified content
+- Detailed change metadata (type, line number, description)
+- Statistics (docstrings added, type hints added, etc.)
+- Error information if processing fails
+
+
 ## How It Works
 
 Zenco uses a "Tree-sitter + AI" architecture for fast, accurate multi-language support:
