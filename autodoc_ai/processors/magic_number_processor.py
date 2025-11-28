@@ -278,18 +278,19 @@ class MagicNumberProcessor(BaseProcessor):
             function_code = first_function.text.decode('utf8') if first_function else self.source_text
             
             line_num = first_node.start_point[0] + 1
-            print(f"  [MAGIC] Line {line_num}: Found magic number `{value}`", flush=True)
+            # print(f"  [MAGIC] Line {line_num}: Found magic number `{value}`", flush=True)
             
             constant_name = generator.suggest_constant_name(function_code, value)
             
             if constant_name:
-                print(f"     → Suggested constant: {constant_name}")
+                # print(f"     → Suggested constant: {constant_name}")
                 constants_to_add.append((constant_name, value))
                 
                 for node, _ in occurrences:
                     replacements.append((node, constant_name))
             else:
-                print(f"     [WARN]  Could not generate meaningful name, skipping")
+                pass
+                # print(f"     [WARN]  Could not generate meaningful name, skipping")
         
         return constants_to_add, replacements
     
@@ -338,7 +339,7 @@ class MagicNumberProcessor(BaseProcessor):
             end_byte=insert_position,
             new_text=constants_text
         )
-        print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
+        # print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
     
     def _add_javascript_constants(self, constants_to_add: List) -> None:
         """Add constants at module level for JavaScript."""
@@ -359,7 +360,7 @@ class MagicNumberProcessor(BaseProcessor):
             end_byte=insert_position,
             new_text=constants_text
         )
-        print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
+        # print(f"  [ADD] Added {len(constants_to_add)} constant(s) at module level")
     
     def _add_java_constants(self, constants_to_add: List) -> None:
         """Add constants at class level for Java."""
@@ -383,7 +384,7 @@ class MagicNumberProcessor(BaseProcessor):
             end_byte=insert_position,
             new_text=constants_text
         )
-        print(f"  [ADD] Added {len(constants_to_add)} constant(s) at class level")
+        # print(f"  [ADD] Added {len(constants_to_add)} constant(s) at class level")
     
     def _add_go_constants(self, constants_to_add: List) -> None:
         """Add constants at package level for Go."""
@@ -404,7 +405,7 @@ class MagicNumberProcessor(BaseProcessor):
             end_byte=insert_position,
             new_text=constants_text
         )
-        print(f"  [ADD] Added {len(constants_to_add)} constant(s) at package level")
+        # print(f"  [ADD] Added {len(constants_to_add)} constant(s) at package level")
     
     def _add_cpp_constants(self, constants_to_add: List) -> None:
         """Add constants at file scope for C++."""
@@ -428,7 +429,7 @@ class MagicNumberProcessor(BaseProcessor):
             end_byte=insert_position,
             new_text=constants_text
         )
-        print(f"  [ADD] Added {len(constants_to_add)} constant(s) at file scope")
+        # print(f"  [ADD] Added {len(constants_to_add)} constant(s) at file scope")
     
     def _infer_java_type(self, value: str) -> str:
         """Infer Java type from value."""
