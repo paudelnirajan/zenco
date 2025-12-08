@@ -60,6 +60,15 @@ class MagicNumberProcessor(BaseProcessor):
             if parent and parent.type == 'default_parameter':
                 continue
             
+            # Skip if part of a constant assignment (e.g. CONST = 10 or x = 10)
+            if parent and parent.type == 'assignment':
+                # Check left side (targets)
+                # In tree-sitter-python, assignment has 'left' field which is the target
+                left_node = parent.child_by_field_name('left')
+                if left_node and left_node.type == 'identifier':
+                    # Skip ALL assignments - we only want to replace numbers in logic/expressions
+                    continue
+            
             # Find containing function
             current = node.parent
             function_node = None

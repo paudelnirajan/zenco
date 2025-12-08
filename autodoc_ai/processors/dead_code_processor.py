@@ -104,10 +104,27 @@ class DeadCodeProcessor(BaseProcessor):
                 to_delete_lines.append(imp['lineno'])
         
         # Never-called functions (dead code)
-        never_called = [(name, ln) for (name, ln) in func_defs if name not in func_calls]
-        for name, ln in never_called:
-            print(f"  • Function never called: {name} (line {ln})")
-            dead_functions.add(name)  # Add to dead set for filtering
+        all_never_called = [(name, ln) for (name, ln) in func_defs if name not in func_calls]
+        
+        # Filter based on strict mode
+        # Safe mode (default): Only remove private functions (starting with _)
+        # Strict mode: Remove all uncalled functions
+        if strict:
+            never_called = all_never_called
+        else:
+            # Safe mode: only private functions (but not dunder methods like __init__)
+            never_called = [
+                (name, ln) for (name, ln) in all_never_called 
+                if name.startswith('_') and not (name.startswith('__') and name.endswith('__'))
+            ]
+        
+        # Report all never-called functions
+        for name, ln in all_never_called:
+            if (name, ln) in never_called:
+                print(f"  • Function never called: {name} (line {ln})")
+            else:
+                print(f"  • Function never called: {name} (line {ln}) [PUBLIC - skipped in safe mode]")
+            dead_functions.add(name)  # Add to dead set for filtering in other processors
         
         # Unused variables
         unused_vars = []
@@ -127,20 +144,54 @@ class DeadCodeProcessor(BaseProcessor):
         for name, ln, txt in unused_vars:
             print(f"  • Unused variable: {name} (line {ln}): {txt.strip()}")
         
-        # Apply deletions if in_place
-        if in_place and to_delete_lines:
+        # Remove unused imports (always add to transformer for preview/JSON mode)
+        if to_delete_lines:
             for ln in sorted(to_delete_lines, reverse=True):
                 line_start = sum(len(l) + 1 for l in lines[:ln-1])
                 line_end = line_start + len(lines[ln-1]) + 1
                 self.transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-            print(f"  [REMOVE]  Removed {len(to_delete_lines)} unused import line(s)")
+            if in_place:
+                print(f"  [REMOVE]  Removed {len(to_delete_lines)} unused import line(s)")
         
-        if in_place and strict and unused_vars:
+        # Remove dead functions (always add to transformer for preview/JSON mode)
+        if never_called:
+            removed_count = 0
+            for name, ln in sorted(never_called, key=lambda x: x[1], reverse=True):
+                # Find the function node in the AST
+                for node in ast.walk(tree_ast):
+                    if isinstance(node, ast.FunctionDef) and node.name == name and node.lineno == ln:
+                        # Calculate the byte range for the entire function
+                        func_start_line = node.lineno - 1  # 0-indexed
+                        
+                        # Find the end line of the function
+                        # Python 3.8+ has end_lineno attribute
+                        if hasattr(node, 'end_lineno') and node.end_lineno:
+                            func_end_line = node.end_lineno
+                        else:
+                            # Fallback: estimate based on body
+                            func_end_line = func_start_line + len(node.body) + 1
+                        
+                        # Calculate byte positions
+                        line_start = sum(len(l) + 1 for l in lines[:func_start_line])
+                        line_end = sum(len(l) + 1 for l in lines[:func_end_line])
+                        
+                        # Remove the entire function
+                        self.transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
+                        removed_count += 1
+                        break
+            
+            if in_place and removed_count > 0:
+                mode_str = "strict mode" if strict else "safe mode (private functions only)"
+                print(f"  [REMOVE]  Removed {removed_count} dead function(s) [{mode_str}]")
+        
+        # Remove unused variables in strict mode (always add to transformer for preview/JSON mode)
+        if strict and unused_vars:
             for _, ln, _ in sorted(unused_vars, key=lambda x: x[1], reverse=True):
                 line_start = sum(len(l) + 1 for l in lines[:ln-1])
                 line_end = line_start + len(lines[ln-1]) + 1
                 self.transformer.add_change(start_byte=line_start, end_byte=line_end, new_text='')
-            print(f"  [REMOVE]  Strict: Removed {len(unused_vars)} unused variable(s)")
+            if in_place:
+                print(f"  [REMOVE]  Strict: Removed {len(unused_vars)} unused variable(s)")
         
         return dead_functions
     

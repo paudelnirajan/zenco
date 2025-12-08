@@ -462,6 +462,10 @@ def run_autodoc(args):
         dead_code_enabled = True or dead_code_enabled
         if refactor_strict_enabled:
             dead_code_strict_enabled = True or dead_code_strict_enabled
+    
+    # Strict mode implies enabled
+    if dead_code_strict_enabled:
+        dead_code_enabled = True
 
     # Show what features are enabled
     features = []
