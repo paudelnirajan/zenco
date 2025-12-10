@@ -151,6 +151,10 @@ We thank all the people who contribute to Zenco! Your contributions make this pr
   <img src="https://contrib.rocks/image?repo=paudelnirajan/zenco" />
 </a>
 
+<a href="https://github.com/AruruGunabhiram">
+  <img src="https://github.com/AruruGunabhiram.png" width="60" height="60" />
+</a>
+
 ### 🎉 How to Contribute
 
 - 🐛 **Report bugs** - [Open an issue](https://github.com/paudelnirajan/zenco/issues)
